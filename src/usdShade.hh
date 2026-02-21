@@ -165,7 +165,7 @@ struct UsdUVTexture : ShaderNode {
 
   TypedAttribute<Animatable<value::AssetPath>> file; // "asset inputs:file" interfaceOnly
 
-  TypedAttributeWithFallback<Animatable<value::texcoord2f>> st{value::texcoord2f{0.0f, 0.0f}}; // "inputs:st"
+  TypedAttributeWithFallback<Animatable<value::float2>> st{value::float2{0.0f, 0.0f}}; // "inputs:st"
 
   TypedAttributeWithFallback<Animatable<Wrap>> wrapS{Wrap::UseMetadata}; // "token inputs:wrapS" interfaceOnly
   TypedAttributeWithFallback<Animatable<Wrap>> wrapT{Wrap::UseMetadata}; // "token inputs:wrapT" interfaceOnly

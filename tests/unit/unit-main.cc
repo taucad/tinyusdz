@@ -38,6 +38,10 @@ TEST_LIST = {
   { "ioutil_test", ioutil_test },
   { "strutil_test", strutil_test },
   { "timesamples_test", timesamples_test },
+  { "value_type_pprint_test", value_type_pprint_test },
+  { "pprint_uvtexture_wrap_test", pprint_uvtexture_wrap_test },
+  { "pprint_bool_attr_test", pprint_bool_attr_test },
+  { "pprint_uvtexture_st_type_test", pprint_uvtexture_st_type_test },
 #if defined(TINYUSDZ_WITH_PXR_COMPAT_API)
   { "pxr_compat_api_test", pxr_compat_api_test },
 #endif
