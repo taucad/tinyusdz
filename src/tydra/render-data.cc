@@ -2935,12 +2935,12 @@ bool RenderSceneConverter::ConvertMesh(
 
     size_t sumCounts = 0;
     dst.usdFaceVertexCounts.clear();
+    std::vector<uint32_t> filteredIndices;
+    filteredIndices.reserve(dst.usdFaceVertexIndices.size());
     for (size_t i = 0; i < counts.size(); i++) {
       if (counts[i] < 3) {
-        PUSH_ERROR_AND_RETURN(
-            fmt::format("faceVertexCounts[{}] contains invalid value {}. The "
-                        "count value must be >= 3",
-                        i, counts[i]));
+        sumCounts += size_t(counts[i]);
+        continue;
       }
 
       if ((sumCounts + size_t(counts[i])) > dst.usdFaceVertexIndices.size()) {
@@ -2949,7 +2949,15 @@ bool RenderSceneConverter::ConvertMesh(
             dst.usdFaceVertexIndices.size()));
       }
       dst.usdFaceVertexCounts.push_back(uint32_t(counts[i]));
+      for (size_t j = 0; j < size_t(counts[i]); j++) {
+        filteredIndices.push_back(dst.usdFaceVertexIndices[sumCounts + j]);
+      }
       sumCounts += size_t(counts[i]);
+    }
+    dst.usdFaceVertexIndices = std::move(filteredIndices);
+
+    if (dst.usdFaceVertexCounts.empty()) {
+      return true;
     }
   }
 
@@ -5473,16 +5481,18 @@ bool MeshVisitor(const tinyusdz::Path &abs_path, const tinyusdz::Prim &prim,
         return false;
       }
 
-      uint64_t mesh_id = uint64_t(visitorEnv->converter->meshes.size());
-      if (mesh_id >= size_t((std::numeric_limits<int32_t>::max)())) {
-        if (err) {
-          (*err) += "Mesh index too large.\n";
+      if (!rmesh.usdFaceVertexCounts.empty()) {
+        uint64_t mesh_id = uint64_t(visitorEnv->converter->meshes.size());
+        if (mesh_id >= size_t((std::numeric_limits<int32_t>::max)())) {
+          if (err) {
+            (*err) += "Mesh index too large.\n";
+          }
+          return false;
         }
-        return false;
-      }
-      visitorEnv->converter->meshMap.add(abs_path.full_path_name(), mesh_id);
+        visitorEnv->converter->meshMap.add(abs_path.full_path_name(), mesh_id);
 
-      visitorEnv->converter->meshes.emplace_back(std::move(rmesh));
+        visitorEnv->converter->meshes.emplace_back(std::move(rmesh));
+      }
     }
   }
 
