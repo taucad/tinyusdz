@@ -105,22 +105,22 @@ bool AssetResolutionResolver::find(const std::string &assetPath) const {
 std::string AssetResolutionResolver::resolve(
     const std::string &assetPath) const {
 
+  std::string result;
   std::string ext = io::GetFileExtension(assetPath);
 
   if (_asset_resolution_handlers.count(ext)) {
     if (_asset_resolution_handlers.at(ext).resolve_fun) {
-      std::string resolvedPath;
       std::string err;
 
       // Use custom handler's userdata
       void *userdata = _asset_resolution_handlers.at(ext).userdata;
 
-      int ret = _asset_resolution_handlers.at(ext).resolve_fun(assetPath.c_str(), _search_paths, &resolvedPath, &err, userdata);
+      int ret = _asset_resolution_handlers.at(ext).resolve_fun(assetPath.c_str(), _search_paths, &result, &err, userdata);
       if (ret != 0) {
-        return std::string();
+        result.clear();
       }
 
-      return resolvedPath;
+      return result;
 
     } else {
       DCOUT("Resolve function is nullptr. Fallback to wildcard handler or built-in file handler.");
@@ -129,41 +129,40 @@ std::string AssetResolutionResolver::resolve(
 
   if (_asset_resolution_handlers.count("*")) {
     if (_asset_resolution_handlers.at("*").resolve_fun) {
-      std::string resolvedPath;
       std::string err;
 
       // Use custom handler's userdata
       void *userdata = _asset_resolution_handlers.at("*").userdata;
 
-      int ret = _asset_resolution_handlers.at("*").resolve_fun(assetPath.c_str(), _search_paths, &resolvedPath, &err, userdata);
+      int ret = _asset_resolution_handlers.at("*").resolve_fun(assetPath.c_str(), _search_paths, &result, &err, userdata);
       if (ret != 0) {
-        return std::string();
+        result.clear();
       }
 
-      return resolvedPath;
+      return result;
 
     }
 
-    return std::string();
+    return result;
   }
 
   DCOUT("cwd = " << _current_working_path);
   DCOUT("search_paths = " << _search_paths);
   DCOUT("assetPath = " << assetPath);
 
-  std::string rpath;
   if ((_current_working_path == ".") || (_current_working_path == "./")) {
-    rpath = io::FindFile(assetPath, {});
+    result = io::FindFile(assetPath, {});
   } else {
-    rpath = io::FindFile(assetPath, {_current_working_path});
+    result = io::FindFile(assetPath, {_current_working_path});
   }
 
-  if (rpath.size()) {
-    return rpath;
+  if (result.size()) {
+    return result;
   }
 
   // TODO: Cache resolition.
-  return io::FindFile(assetPath, _search_paths);
+  result = io::FindFile(assetPath, _search_paths);
+  return result;
 }
 
 bool AssetResolutionResolver::open_asset(const std::string &resolvedPath, const std::string &assetPath,
