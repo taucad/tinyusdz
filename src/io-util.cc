@@ -423,7 +423,7 @@ std::string ExpandFilePath(const std::string &_filepath, void *) {
   wordexp_t p;
 
   if (filepath.empty()) {
-    return "";
+    return s;
   }
 
   // Quote the string to keep any spaces in filepath intact.

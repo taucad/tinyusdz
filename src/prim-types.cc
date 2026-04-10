@@ -1970,17 +1970,16 @@ bool AttrMetas::has_colorSpace() const {
 }
 
 value::token AttrMetas::get_colorSpace() const {
-  if (!has_colorSpace()) {
-    return value::token();
-  }
-
-  const MetaVariable &mv = meta.at("colorSpace");
   value::token tok;
-  if (mv.get_value<value::token>(&tok)) {
+
+  if (!has_colorSpace()) {
     return tok;
   }
 
-  return value::token();
+  const MetaVariable &mv = meta.at("colorSpace");
+  mv.get_value<value::token>(&tok);
+
+  return tok;
 }
 
 bool AttrMetas::has_unauthoredValuesIndex() const {
