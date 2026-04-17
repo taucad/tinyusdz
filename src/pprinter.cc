@@ -316,6 +316,7 @@ std::string print_animatable_default(const Animatable<T> &v,
   (void)indent;
 
   std::stringstream ss;
+  ss << std::boolalpha;
 
   if (v.is_blocked()) {
     ss << "None";
@@ -1034,6 +1035,7 @@ std::string print_typed_attr(
     const TypedAttributeWithFallback<Animatable<T>> &attr,
     const std::string &name, const uint32_t indent) {
   std::stringstream ss;
+  ss << std::boolalpha;
 
   if (attr.authored()) {
 

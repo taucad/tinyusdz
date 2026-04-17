@@ -12,6 +12,7 @@
 #include "pprinter.hh"
 #include "usdShade.hh"
 #include "usdGeom.hh"
+#include "usdLux.hh"
 
 using namespace tinyusdz;
 
@@ -50,25 +51,87 @@ void pprint_uvtexture_wrap_test(void) {
 }
 
 void pprint_bool_attr_test(void) {
-  GeomMesh mesh;
-  mesh.doubleSided.set_value(true);
+  {
+    GeomMesh mesh;
+    mesh.doubleSided.set_value(true);
 
-  std::string result = to_string(mesh);
+    std::string result = to_string(mesh);
 
-  TEST_CHECK_(result.find("doubleSided = true") != std::string::npos,
-              "bool true should serialize as 'true', not '1'");
-  TEST_CHECK_(result.find("doubleSided = 1") == std::string::npos,
-              "bool should not serialize as numeric '1'");
+    TEST_CHECK_(result.find("doubleSided = true") != std::string::npos,
+                "bool true should serialize as 'true', not '1'");
+    TEST_CHECK_(result.find("doubleSided = 1") == std::string::npos,
+                "bool should not serialize as numeric '1'");
+  }
+
+  // false-case regression — guards against asymmetric boolalpha bugs
+  {
+    GeomMesh mesh;
+    mesh.doubleSided.set_value(false);
+
+    std::string result = to_string(mesh);
+
+    TEST_CHECK_(result.find("doubleSided = false") != std::string::npos,
+                "bool false should serialize as 'false', not '0'");
+    TEST_CHECK_(result.find("doubleSided = 0") == std::string::npos,
+                "bool should not serialize as numeric '0'");
+  }
+}
+
+void pprint_bool_animatable_attr_test(void) {
+  // Covers TypedAttributeWithFallback<Animatable<bool>> — a separate printer
+  // overload from TypedAttributeWithFallback<bool> (GeomMesh::doubleSided).
+  // Real consumers: UsdLux SphereLight/CylinderLight `inputs:normalize` and
+  // `inputs:enableColorTemperature`, UsdSkel `collection:*:includeRoot`.
+  {
+    SphereLight light;
+    light.normalize.set_value(true);
+
+    std::string result = to_string(light);
+
+    TEST_CHECK_(result.find("inputs:normalize = true") != std::string::npos,
+                "Animatable<bool> true should serialize as 'true'");
+    TEST_CHECK_(result.find("inputs:normalize = 1") == std::string::npos,
+                "Animatable<bool> must not serialize as numeric '1'");
+  }
+
+  {
+    SphereLight light;
+    light.normalize.set_value(false);
+
+    std::string result = to_string(light);
+
+    TEST_CHECK_(result.find("inputs:normalize = false") != std::string::npos,
+                "Animatable<bool> false should serialize as 'false'");
+    TEST_CHECK_(result.find("inputs:normalize = 0") == std::string::npos,
+                "Animatable<bool> must not serialize as numeric '0'");
+  }
 }
 
 void pprint_uvtexture_st_type_test(void) {
-  UsdUVTexture tex;
-  tex.st.set_value(value::float2{0.5f, 0.5f});
+  // Fallback (set_value) form
+  {
+    UsdUVTexture tex;
+    tex.st.set_value(value::float2{0.5f, 0.5f});
 
-  std::string result = to_string(tex);
+    std::string result = to_string(tex);
 
-  TEST_CHECK_(result.find("float2 inputs:st") != std::string::npos,
-              "inputs:st should be typed as float2 per USD spec");
-  TEST_CHECK_(result.find("texcoord2f inputs:st") == std::string::npos,
-              "inputs:st should not use texcoord2f type");
+    TEST_CHECK_(result.find("float2 inputs:st") != std::string::npos,
+                "inputs:st should be typed as float2 per USD spec");
+    TEST_CHECK_(result.find("texcoord2f inputs:st") == std::string::npos,
+                "inputs:st should not use texcoord2f type");
+  }
+
+  // Connection form — the actual usdchecker failure case
+  // (UsdShade Sdr-compliance: Expected 'float2' on UsdUVTexture.inputs:st).
+  {
+    UsdUVTexture tex;
+    tex.st.set_connection(Path("/Root/Mat/StReader", "outputs:result"));
+
+    std::string result = to_string(tex);
+
+    TEST_CHECK_(result.find("float2 inputs:st.connect") != std::string::npos,
+                "inputs:st.connect must declare float2 (UsdShade Sdr-compliance)");
+    TEST_CHECK_(result.find("texcoord2f inputs:st.connect") == std::string::npos,
+                "inputs:st.connect must not declare texcoord2f");
+  }
 }
