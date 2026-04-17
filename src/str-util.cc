@@ -112,7 +112,8 @@ std::string unescapeControlSequence(const std::string &str) {
   std::string s;
 
   if (str.size() < 2) {
-    return str;
+    s = str;
+    return s;
   }
 
   for (size_t i = 0; i < str.size(); i++) {
@@ -544,7 +545,8 @@ std::vector<std::string> to_utf8_chars(const std::string &str) {
     std::string s = detail::extract_utf8_char(str, uint32_t(i), len);
     if (len == 0) {
       // invalid char
-      return std::vector<std::string>();
+      utf8_chars.clear();
+      return utf8_chars;
     }
 
     i += uint64_t(len);
@@ -641,7 +643,8 @@ std::vector<uint32_t> to_codepoints(const std::string &str) {
     uint32_t cp = detail::to_codepoint(str.c_str() + i, char_len);
 
     if ((cp > kMaxUTF8Codepoint) || (char_len == 0)) {
-      return std::vector<uint32_t>();
+      cps.clear();
+      return cps;
     }
 
     cps.push_back(cp);
@@ -683,7 +686,8 @@ std::string makeIdentifierValid(const std::string &str, bool is_utf8) {
 
   if (str.empty()) {
     // return '_'
-    return "_";
+    s = "_";
+    return s;
   }
 
   // first char

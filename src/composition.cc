@@ -1386,11 +1386,11 @@ static nonstd::optional<Prim> ReconstructPrimFromPrimSpec(
 static nonstd::optional<Prim> ReconstructPrimFromPrimSpecRec(
     const PrimSpec &primspec, std::string *warn, std::string *err) {
 
-  auto pprim = ReconstructPrimFromPrimSpec(primspec, warn, err);
+  nonstd::optional<Prim> pprim = ReconstructPrimFromPrimSpec(primspec, warn, err);
   if (!pprim) {
-    return nonstd::nullopt;
+    return pprim;
   }
-  
+
   for (size_t i = 0; i < primspec.children().size(); i++) {
     if (auto pv = ReconstructPrimFromPrimSpecRec(primspec.children()[i], warn, err)) {
       pprim.value().children().emplace_back(std::move(pv.value()));

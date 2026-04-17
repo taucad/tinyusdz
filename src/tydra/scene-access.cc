@@ -2489,7 +2489,7 @@ GetBlendShapes(const tinyusdz::Stage &stage, const tinyusdz::Prim &prim,
     if (err) {
       (*err) += "Prim must be GeomMesh.\n";
     }
-    return std::vector<std::pair<std::string, const tinyusdz::BlendShape *>>{};
+    return dst;
   }
 
   //
@@ -2504,8 +2504,8 @@ GetBlendShapes(const tinyusdz::Stage &stage, const tinyusdz::Prim &prim,
       if (err) {
         (*err) += "Failed to get `skel:blendShapes` attribute.\n";
       }
-      return std::vector<
-          std::pair<std::string, const tinyusdz::BlendShape *>>{};
+      dst.clear();
+      return dst;
     }
 
     if (pmesh->blendShapeTargets.value().is_path()) {
@@ -2515,22 +2515,22 @@ GetBlendShapes(const tinyusdz::Stage &stage, const tinyusdz::Prim &prim,
               "Array size mismatch with `skel:blendShapes` and "
               "`skel:blendShapeTargets`.\n";
         }
-        return std::vector<
-            std::pair<std::string, const tinyusdz::BlendShape *>>{};
+        dst.clear();
+        return dst;
       }
 
       const Path &targetPath = pmesh->blendShapeTargets.value().targetPath;
       const Prim *bsprim{nullptr};
       if (!stage.find_prim_at_path(targetPath, bsprim, err)) {
-        return std::vector<
-            std::pair<std::string, const tinyusdz::BlendShape *>>{};
+        dst.clear();
+        return dst;
       }
       if (!bsprim) {
         if (err) {
           (*err) += "Internal error. BlendShape Prim is nullptr.\n";
         }
-        return std::vector<
-            std::pair<std::string, const tinyusdz::BlendShape *>>{};
+        dst.clear();
+        return dst;
       }
 
       if (const auto *bs = bsprim->as<BlendShape>()) {
@@ -2540,8 +2540,8 @@ GetBlendShapes(const tinyusdz::Stage &stage, const tinyusdz::Prim &prim,
           (*err) += fmt::format("{} is not BlendShape Prim.\n",
                                 targetPath.full_path_name());
         }
-        return std::vector<
-            std::pair<std::string, const tinyusdz::BlendShape *>>{};
+        dst.clear();
+        return dst;
       }
 
     } else if (pmesh->blendShapeTargets.value().is_pathvector()) {
@@ -2552,8 +2552,8 @@ GetBlendShapes(const tinyusdz::Stage &stage, const tinyusdz::Prim &prim,
               "Array size mismatch with `skel:blendShapes` and "
               "`skel:blendShapeTargets`.\n";
         }
-        return std::vector<
-            std::pair<std::string, const tinyusdz::BlendShape *>>{};
+        dst.clear();
+        return dst;
       }
     } else {
       if (err) {
@@ -2561,8 +2561,8 @@ GetBlendShapes(const tinyusdz::Stage &stage, const tinyusdz::Prim &prim,
             "Invalid or unsupported definition of `skel:blendShapeTargets` "
             "relationship.\n";
       }
-      return std::vector<
-          std::pair<std::string, const tinyusdz::BlendShape *>>{};
+      dst.clear();
+      return dst;
     }
 
     for (size_t i = 0;
@@ -2571,15 +2571,15 @@ GetBlendShapes(const tinyusdz::Stage &stage, const tinyusdz::Prim &prim,
           pmesh->blendShapeTargets.value().targetPathVector[i];
       const Prim *bsprim{nullptr};
       if (!stage.find_prim_at_path(targetPath, bsprim, err)) {
-        return std::vector<
-            std::pair<std::string, const tinyusdz::BlendShape *>>{};
+        dst.clear();
+        return dst;
       }
       if (!bsprim) {
         if (err) {
           (*err) += "Internal error. BlendShape Prim is nullptr.";
         }
-        return std::vector<
-            std::pair<std::string, const tinyusdz::BlendShape *>>{};
+        dst.clear();
+        return dst;
       }
 
       if (const auto *bs = bsprim->as<BlendShape>()) {
@@ -2589,8 +2589,8 @@ GetBlendShapes(const tinyusdz::Stage &stage, const tinyusdz::Prim &prim,
           (*err) += fmt::format("{} is not BlendShape Prim.",
                                 targetPath.full_path_name());
         }
-        return std::vector<
-            std::pair<std::string, const tinyusdz::BlendShape *>>{};
+        dst.clear();
+        return dst;
       }
     }
   }

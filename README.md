@@ -47,7 +47,10 @@ More on the status: https://github.com/lighttransport/tinyusdz/blob/release/doc/
 
 * LightUSD: https://github.com/lighttransport/tinyusdz/tree/lightusd/sandbox/lightusd
   * USD for 3D genAI/VLM/LLM
-    
+* LightUSD-C: https://github.com/lighttransport/lightusd-c
+  * Pure C USD library for 3D genAI/VLM/LLM
+  * Private for now.
+       
 ## Branches
 
 * `release` Release branch
