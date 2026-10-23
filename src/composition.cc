@@ -494,11 +494,11 @@ bool LoadAsset(AssetResolutionResolver &resolver,
 
   // Dedupe per-asset-path warnings: UE-exported scenes repeat the same
   // authored path across thousands of arcs.
-  static std::set<std::string> s_warned_asset_paths;
-  static std::mutex s_warned_asset_paths_mutex;
+  // The dedupe set lives on the resolver (one per load), not in a static: a
+  // process-global set silently drops the warning for every later load of a
+  // document with the same missing asset in long-lived hosts.
   auto warn_once = [&](const std::string &key, const std::string &msg) {
-    std::lock_guard<std::mutex> lock(s_warned_asset_paths_mutex);
-    if (s_warned_asset_paths.insert(key).second) {
+    if (resolver.mark_warned(key)) {
       PUSH_WARN(msg);
     }
   };
