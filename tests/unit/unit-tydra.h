@@ -8,6 +8,7 @@ void tydra_memory_tracking_test(void);
 void tydra_degenerate_face_skip_test(void);
 void tydra_invalid_mesh_skip_test(void);
 void tydra_material_node_category_test(void);
+void tydra_blendshape_dense_and_path_test(void);
 void tydra_scene_access_helper_test(void);
 void tydra_shader_scene_access_test(void);
 void tydra_skel_scene_access_test(void);

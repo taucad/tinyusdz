@@ -5055,3 +5055,78 @@ def Xform "root"
   TEST_CHECK(categories["/root/Looks"] == tydra::NodeCategory::Group);
   TEST_CHECK(categories["/root/Tri"] == tydra::NodeCategory::Geom);
 }
+
+void tydra_blendshape_dense_and_path_test(void) {
+  // A BlendShape without pointIndices is dense (one offset per point), and
+  // ShapeTarget::abs_path holds the BlendShape prim path.
+  std::string usda = R"(#usda 1.0
+def SkelRoot "root"
+{
+    def Skeleton "Skel"
+    {
+        uniform matrix4d[] bindTransforms = [( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )]
+        uniform token[] joints = ["Root"]
+        uniform matrix4d[] restTransforms = [( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )]
+    }
+    def Mesh "Face" (
+        prepend apiSchemas = ["SkelBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+        uniform token[] skel:blendShapes = ["denseChannel", "sparseChannel"]
+        rel skel:blendShapeTargets = [</root/Face/dense>, </root/Face/sparse>]
+        rel skel:skeleton = </root/Skel>
+
+        def BlendShape "dense"
+        {
+            uniform vector3f[] offsets = [(0, 0, 1), (0, 0, 2), (0, 0, 3)]
+        }
+        def BlendShape "sparse"
+        {
+            uniform vector3f[] offsets = [(0, 0, 5)]
+            uniform int[] pointIndices = [1]
+        }
+    }
+}
+)";
+
+  Stage stage;
+  std::string warn;
+  std::string err;
+  TEST_CHECK(LoadUSDAFromMemory(
+      reinterpret_cast<const uint8_t *>(usda.data()), usda.size(),
+      "", &stage, &warn, &err));
+
+  tydra::RenderSceneConverterEnv env(stage);
+  tydra::RenderScene scene;
+  tydra::RenderSceneConverter converter;
+  TEST_CHECK(converter.ConvertToRenderScene(env, &scene));
+  TEST_MSG("ConvertToRenderScene failed: %s", converter.GetError().c_str());
+  TEST_ASSERT(scene.meshes.size() == 1);
+  const tydra::RenderMesh &mesh = scene.meshes[0];
+  TEST_ASSERT(mesh.targets.count("dense") == 1);
+  TEST_ASSERT(mesh.targets.count("sparse") == 1);
+
+  const tydra::ShapeTarget &dense = mesh.targets.at("dense");
+  TEST_CHECK(dense.abs_path == "/root/Face/dense");
+  TEST_MSG("abs_path: %s", dense.abs_path.c_str());
+  TEST_CHECK(dense.prim_name == "dense");
+  TEST_ASSERT(dense.pointIndices.size() == dense.pointOffsets.size());
+  TEST_CHECK(dense.pointOffsets.size() == mesh.points.size());
+  // Each point's offset follows the point (points may be reordered).
+  for (size_t i = 0; i < dense.pointIndices.size(); i++) {
+    const uint32_t p = dense.pointIndices[i];
+    TEST_ASSERT(p < mesh.points.size());
+    const float expected = mesh.points[p][0] == 1.0f ? 2.0f
+                           : mesh.points[p][1] == 1.0f ? 3.0f
+                                                       : 1.0f;
+    TEST_CHECK(std::fabs(dense.pointOffsets[i][2] - expected) < 1e-6f);
+  }
+
+  const tydra::ShapeTarget &sparse = mesh.targets.at("sparse");
+  TEST_CHECK(sparse.abs_path == "/root/Face/sparse");
+  TEST_CHECK(sparse.pointIndices.size() == 1);
+  TEST_CHECK(sparse.pointOffsets.size() == 1);
+}

@@ -3590,6 +3590,13 @@ bool RenderSceneConverter::ConvertMesh(
       bs->pointIndices.get_value(&bs_indices);
       bs->offsets.get_value(&bs_point_offsets);
       bs->normalOffsets.get_value(&bs_normal_offsets);
+      if (bs_indices.empty() && bs_point_offsets.size() == size_t(num_vertices)) {
+        // Dense BlendShape: one offset per point.
+        bs_indices.resize(bs_point_offsets.size());
+        for (size_t i = 0; i < bs_indices.size(); i++) {
+          bs_indices[i] = int(i);
+        }
+      }
       if (bs_indices.empty() || bs_point_offsets.size() != bs_indices.size()) {
         continue;  // the BlendShape conversion step warns and skips these
       }
@@ -4963,13 +4970,32 @@ bool RenderSceneConverter::ConvertMesh(
   //    NOTE: (Built-in) BlendShape attributes are per-point, so it is not
   //    affected by triangulation and single-indexable indices build.
   //
-  for (const auto &it : blendshapes) {
-    const std::string &bs_path = it.first;
+  // `blendshapes` follows the order of skel:blendShapeTargets (see
+  // GetBlendShapes), so the target prim paths come from the relationship.
+  std::vector<Path> bs_target_paths;
+  if (mesh.blendShapeTargets.has_value()) {
+    const Relationship &rel = mesh.blendShapeTargets.value();
+    if (rel.is_path()) {
+      bs_target_paths.push_back(rel.targetPath);
+    } else if (rel.is_pathvector()) {
+      bs_target_paths = rel.targetPathVector;
+    }
+  }
+  if (bs_target_paths.size() != blendshapes.size()) {
+    bs_target_paths.clear();
+  }
+
+  for (size_t bs_idx = 0; bs_idx < blendshapes.size(); bs_idx++) {
+    const auto &it = blendshapes[bs_idx];
     const BlendShape *bs = it.second;
 
     if (!bs) {
       continue;
     }
+    // Absolute prim path of the BlendShape (falls back to the channel name).
+    const std::string bs_path = bs_target_paths.empty()
+                                    ? it.first
+                                    : bs_target_paths[bs_idx].full_path_name();
 
     std::vector<int> vertex_indices;
     std::vector<value::vector3f> normal_offsets;
@@ -5024,10 +5050,20 @@ bool RenderSceneConverter::ConvertMesh(
     }
 
     if (vertex_indices.empty()) {
-      PUSH_WARN(
-          fmt::format("`pointIndices` in BlendShape `{}` is not authored or "
-                      "empty. Skipping.",
-                      bs->name));
+      if (!vertex_offsets.empty() && vertex_offsets.size() == dst.points.size()) {
+        // Dense BlendShape (UsdSkel: pointIndices is optional): one offset per
+        // point. Store it with explicit indices so later reordering applies.
+        vertex_indices.resize(vertex_offsets.size());
+        for (size_t i = 0; i < vertex_indices.size(); i++) {
+          vertex_indices[i] = int(i);
+        }
+      } else {
+        PUSH_WARN(fmt::format(
+            "BlendShape `{}` has no `pointIndices` and {} offsets for {} "
+            "points. Skipping.",
+            bs->name, vertex_offsets.size(), dst.points.size()));
+        continue;
+      }
     }
 
     // Validate and convert indices in-place.
