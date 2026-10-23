@@ -27,6 +27,9 @@
 #pragma once
 
 #include <atomic>
+#include <map>
+#include <mutex>
+#include <set>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -245,6 +248,21 @@ class AssetResolutionResolver {
   std::string search_paths_str() const;
 
   ///
+  /// Search paths passed to custom resolve callbacks: the current working
+  /// path (if set) followed by the search paths.
+  ///
+  std::vector<std::string> handler_search_paths() const;
+
+  ///
+  /// Record that a diagnostic keyed by `key` was emitted during this load.
+  /// Returns true the first time a key is seen.
+  ///
+  bool mark_warned(const std::string &key) const {
+    std::lock_guard<std::mutex> lock(_warned_keys_mutex);
+    return _warned_keys.insert(key).second;
+  }
+
+  ///
   /// Register user defined AssetResolution handler per file extension.
   /// Default = use built-in file handler(FILE/ifstream)
   /// This handler is used in resolve(), find() and open_asset()
@@ -421,6 +439,8 @@ class AssetResolutionResolver {
   std::map<std::string, AssetResolutionHandler> _asset_resolution_handlers;
 
   mutable std::map<std::string, std::string> _cached_resolved_paths;
+  mutable std::set<std::string> _warned_keys;
+  mutable std::mutex _warned_keys_mutex;
 };
 
 // forward decl

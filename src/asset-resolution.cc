@@ -30,6 +30,24 @@ std::string AssetResolutionResolver::search_paths_str() const {
   return str;
 }
 
+// Custom resolve callbacks only receive the search paths. Composition anchors
+// relative asset paths at the current working path (the referencing layer's
+// directory), so hand that to callbacks as the first search path; otherwise a
+// handler cannot resolve e.g. a relative subLayer, which resets the search
+// paths to the layer's own (usually empty) list.
+std::vector<std::string> AssetResolutionResolver::handler_search_paths() const {
+  if (_current_working_path.empty() || _current_working_path == "./" ||
+      std::find(_search_paths.begin(), _search_paths.end(),
+                _current_working_path) != _search_paths.end()) {
+    return _search_paths;
+  }
+  std::vector<std::string> paths;
+  paths.reserve(_search_paths.size() + 1);
+  paths.push_back(_current_working_path);
+  paths.insert(paths.end(), _search_paths.begin(), _search_paths.end());
+  return paths;
+}
+
 bool AssetResolutionResolver::find(const std::string &assetPath) const {
   DCOUT("search_paths = " << _search_paths);
   DCOUT("assetPath = " << assetPath);
@@ -44,7 +62,7 @@ bool AssetResolutionResolver::find(const std::string &assetPath) const {
       // Use custom handler's userdata
       void *userdata = _asset_resolution_handlers.at(ext).userdata;
 
-      int ret = _asset_resolution_handlers.at(ext).resolve_fun(assetPath.c_str(), _search_paths, &resolvedPath, &err, userdata);
+      int ret = _asset_resolution_handlers.at(ext).resolve_fun(assetPath.c_str(), handler_search_paths(), &resolvedPath, &err, userdata);
       if (ret != 0) {
         return false;
       }
@@ -71,7 +89,7 @@ bool AssetResolutionResolver::find(const std::string &assetPath) const {
       // Use custom handler's userdata
       void *userdata = _asset_resolution_handlers.at("*").userdata;
 
-      int ret = _asset_resolution_handlers.at("*").resolve_fun(assetPath.c_str(), _search_paths, &resolvedPath, &err, userdata);
+      int ret = _asset_resolution_handlers.at("*").resolve_fun(assetPath.c_str(), handler_search_paths(), &resolvedPath, &err, userdata);
       if (ret != 0) {
         return false;
       }
@@ -173,7 +191,7 @@ std::string AssetResolutionResolver::resolve_literal(
       // Use custom handler's userdata
       void *userdata = _asset_resolution_handlers.at(ext).userdata;
 
-      int ret = _asset_resolution_handlers.at(ext).resolve_fun(assetPath.c_str(), _search_paths, &resolvedPath, &err, userdata);
+      int ret = _asset_resolution_handlers.at(ext).resolve_fun(assetPath.c_str(), handler_search_paths(), &resolvedPath, &err, userdata);
       if (ret != 0) {
         resolvedPath = std::string();
 
@@ -193,7 +211,7 @@ std::string AssetResolutionResolver::resolve_literal(
       // Use custom handler's userdata
       void *userdata = _asset_resolution_handlers.at("*").userdata;
 
-      int ret = _asset_resolution_handlers.at("*").resolve_fun(assetPath.c_str(), _search_paths, &resolvedPath, &err, userdata);
+      int ret = _asset_resolution_handlers.at("*").resolve_fun(assetPath.c_str(), handler_search_paths(), &resolvedPath, &err, userdata);
       if (ret != 0) {
         resolvedPath = std::string();
       }

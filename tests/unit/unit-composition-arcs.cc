@@ -6,6 +6,8 @@
 #include "acutest.h"
 
 #include <cmath>
+#include <cstring>
+#include <map>
 
 #include "unit-composition-arcs.h"
 #include "composition.hh"
@@ -2861,5 +2863,140 @@ void comp_timesamples_time_transform_test(void) {
       TEST_CHECK(std::fabs(samples[0].t - 5.0) < 1e-12);
       TEST_CHECK(std::fabs(samples[1].t - 25.0) < 1e-12);
     }
+  }
+}
+
+namespace {
+
+// Virtual filesystem keyed by absolute path. The resolve callback only sees
+// the search paths, as in a sandboxed host (WebAssembly, a sidecar resolver).
+struct VirtualFiles {
+  std::map<std::string, std::string> files;
+};
+
+int vfs_resolve(const char *asset_name, const std::vector<std::string> &search_paths,
+                std::string *resolved, std::string *err, void *userdata) {
+  auto *vfs = static_cast<VirtualFiles *>(userdata);
+  std::string name(asset_name);
+  if (name.rfind("./", 0) == 0) {
+    name = name.substr(2);
+  }
+  if (vfs->files.count(name)) {
+    *resolved = name;
+    return 0;
+  }
+  for (const auto &dir : search_paths) {
+    std::string candidate = dir + "/" + name;
+    if (vfs->files.count(candidate)) {
+      *resolved = candidate;
+      return 0;
+    }
+  }
+  if (err) {
+    *err = "not found: " + name;
+  }
+  return -1;
+}
+
+int vfs_size(const char *resolved, uint64_t *nbytes, std::string *err, void *userdata) {
+  auto *vfs = static_cast<VirtualFiles *>(userdata);
+  auto it = vfs->files.find(resolved);
+  if (it == vfs->files.end()) {
+    if (err) *err = "missing";
+    return -1;
+  }
+  *nbytes = it->second.size();
+  return 0;
+}
+
+int vfs_read(const char *resolved, uint64_t req, uint8_t *out, uint64_t *nbytes,
+             std::string *err, void *userdata) {
+  auto *vfs = static_cast<VirtualFiles *>(userdata);
+  auto it = vfs->files.find(resolved);
+  if (it == vfs->files.end()) {
+    if (err) *err = "missing";
+    return -1;
+  }
+  uint64_t n = (std::min)(req, uint64_t(it->second.size()));
+  memcpy(out, it->second.data(), size_t(n));
+  *nbytes = n;
+  return 0;
+}
+
+}  // namespace
+
+void comp_sublayer_custom_resolver_relative_test(void) {
+  // A relative subLayer must resolve through a custom handler. Sublayer
+  // composition resets the resolver's search paths to the layer's own (empty)
+  // list, so the handler can only find the file if it is given the layer's
+  // directory.
+  VirtualFiles vfs;
+  vfs.files["/virt/scene/base.usda"] = R"(#usda 1.0
+def Xform "FromBase"
+{
+}
+)";
+  const std::string root_usda = R"(#usda 1.0
+(
+    subLayers = [
+        @./base.usda@
+    ]
+)
+def Xform "FromRoot"
+{
+}
+)";
+
+  Layer root_layer;
+  std::string warn, err;
+  TEST_CHECK(LoadLayerFromMemory(
+      reinterpret_cast<const uint8_t *>(root_usda.data()), root_usda.size(),
+      "/virt/scene/root.usda", &root_layer, &warn, &err));
+  TEST_MSG("LoadLayerFromMemory error: %s", err.c_str());
+
+  AssetResolutionHandler handler;
+  handler.resolve_fun = vfs_resolve;
+  handler.size_fun = vfs_size;
+  handler.read_fun = vfs_read;
+  handler.userdata = &vfs;
+  AssetResolutionResolver resolver;
+  resolver.register_wildcard_asset_resolution_handler(handler);
+  resolver.set_current_working_path("/virt/scene");
+
+  Layer composed;
+  TEST_CHECK(CompositeSublayers(resolver, root_layer, &composed, &warn, &err));
+  TEST_MSG("CompositeSublayers error: %s", err.c_str());
+  TEST_CHECK(composed.primspecs().count("FromRoot") == 1);
+  TEST_CHECK(composed.primspecs().count("FromBase") == 1);
+}
+
+void comp_missing_asset_warning_per_load_test(void) {
+  // The "asset not found" warning for an unresolved reference is reported on
+  // every load, not just the first one in the process.
+  const std::string root_usda = R"(#usda 1.0
+def Xform "Root" (
+    prepend references = @missing-sidecar.usda@
+)
+{
+}
+)";
+  for (int pass = 0; pass < 2; pass++) {
+    Layer root_layer;
+    std::string warn, err;
+    TEST_CHECK(LoadLayerFromMemory(
+        reinterpret_cast<const uint8_t *>(root_usda.data()), root_usda.size(),
+        "/virt/root.usda", &root_layer, &warn, &err));
+    VirtualFiles vfs;
+    AssetResolutionHandler handler;
+    handler.resolve_fun = vfs_resolve;
+    handler.size_fun = vfs_size;
+    handler.read_fun = vfs_read;
+    handler.userdata = &vfs;
+    AssetResolutionResolver resolver;
+    resolver.register_wildcard_asset_resolution_handler(handler);
+    Layer composed;
+    CompositeReferences(resolver, root_layer, &composed, &warn, &err);
+    TEST_CHECK(warn.find("missing-sidecar.usda") != std::string::npos);
+    TEST_MSG("pass %d warn: %s err: %s", pass, warn.c_str(), err.c_str());
   }
 }
