@@ -713,8 +713,10 @@ bool LoadUSDZFromMemory(const uint8_t *addr, const size_t length,
     }
 
     const uint8_t *usda_addr = addr + start_addr_offset;
-    bool ret = LoadUSDAFromMemory(usda_addr, usda_size, filename, stage, warn,
-                                  err, options);
+    // LoadUSDAFromMemory takes a base directory, not a filename.
+    bool ret = LoadUSDAFromMemory(usda_addr, usda_size,
+                                  io::GetBaseDir(filename), stage, warn, err,
+                                  options);
 
     if (!ret) {
       if (err) {
