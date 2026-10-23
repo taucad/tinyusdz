@@ -4406,6 +4406,7 @@ void tydra_skin_binding_validation_test(void) {
     TEST_CHECK(stage.add_root_prim(Prim("MeshPrim", mesh)));
 
     tydra::RenderSceneConverterEnv env(stage);
+    env.mesh_config.skip_invalid_geometry = false;
     tydra::RenderScene scene;
     tydra::RenderSceneConverter converter;
 
@@ -4428,6 +4429,7 @@ void tydra_skin_binding_validation_test(void) {
     TEST_CHECK(stage.add_root_prim(Prim("MeshPrim", mesh)));
 
     tydra::RenderSceneConverterEnv env(stage);
+    env.mesh_config.skip_invalid_geometry = false;
     tydra::RenderScene scene;
     tydra::RenderSceneConverter converter;
 
@@ -4926,4 +4928,64 @@ def Mesh "m"
   TEST_MSG("triangles: %d", int(mesh.faceVertexCounts().size()));
   TEST_CHECK(mesh.faceVertexIndices().size() == 9);
   TEST_CHECK(converter.GetWarning().find("degenerate") != std::string::npos);
+}
+
+void tydra_invalid_mesh_skip_test(void) {
+  // An invalid mesh (face vertex index out of range) is skipped with a
+  // warning and the rest of the scene converts. With skip_invalid_geometry
+  // disabled the conversion fails as before.
+  std::string usda = R"(#usda 1.0
+def Xform "root"
+{
+    def Mesh "Good"
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+    }
+    def Mesh "Bad"
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 99]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+    }
+    def Mesh "AlsoGood"
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 1), (1, 0, 1), (0, 1, 1)]
+    }
+}
+)";
+
+  for (int threads : {1, 4}) {
+    Stage stage;
+    std::string warn;
+    std::string err;
+    TEST_CHECK(LoadUSDAFromMemory(
+        reinterpret_cast<const uint8_t *>(usda.data()), usda.size(),
+        "", &stage, &warn, &err));
+
+    {
+      tydra::RenderSceneConverterEnv env(stage);
+      env.scene_config.num_threads = threads;
+      tydra::RenderScene scene;
+      tydra::RenderSceneConverter converter;
+      TEST_CHECK(converter.ConvertToRenderScene(env, &scene));
+      TEST_MSG("ConvertToRenderScene failed: %s", converter.GetError().c_str());
+      TEST_CHECK(scene.meshes.size() == 2);
+      TEST_MSG("meshes: %d", int(scene.meshes.size()));
+      TEST_CHECK(converter.GetWarning().find("/root/Bad") != std::string::npos);
+      TEST_MSG("warning: %s", converter.GetWarning().c_str());
+    }
+    {
+      tydra::RenderSceneConverterEnv env(stage);
+      env.scene_config.num_threads = threads;
+      env.mesh_config.skip_invalid_geometry = false;
+      tydra::RenderScene scene;
+      tydra::RenderSceneConverter converter;
+      TEST_CHECK(!converter.ConvertToRenderScene(env, &scene));
+      TEST_CHECK(converter.GetError().find("/root/Bad") != std::string::npos);
+    }
+  }
 }

@@ -5382,6 +5382,22 @@ bool RenderSceneConverter::ConvertMaterial(const RenderSceneConverterEnv &env,
   return true;
 }
 
+
+// With mesh_config.skip_invalid_geometry, a geometry prim that fails to
+// convert is reported as a warning and skipped (returns true); otherwise the
+// caller fails the conversion.
+static bool SkipInvalidGeometry(MeshVisitorEnv *visitorEnv, const std::string &kind,
+                                const Path &abs_path) {
+  if (!visitorEnv->env->mesh_config.skip_invalid_geometry) {
+    return false;
+  }
+  RenderSceneConverter *conv = visitorEnv->converter;
+  conv->AddWarning(fmt::format("{} conversion failed; skipping `{}`: {}", kind,
+                               abs_path.full_path_name(), conv->GetError()));
+  conv->ClearError();
+  return true;
+}
+
 bool MeshVisitor(const lightusd::Path &abs_path, const lightusd::Prim &prim,
                  const int32_t level, void *userdata, std::string *err) {
   if (!userdata) {
@@ -5841,6 +5857,9 @@ bool MeshVisitor(const lightusd::Path &abs_path, const lightusd::Prim &prim,
               *visitorEnv->env, abs_path, *pmesh, material_path,
               subset_material_path_map, visitorEnv->converter->materialMap,
               material_subsets, blendshapes, &rmesh)) {
+        if (SkipInvalidGeometry(visitorEnv, "Mesh", abs_path)) {
+          return true;
+        }
         if (err) {
           (*err) += fmt::format("Mesh conversion failed: {}",
                                 abs_path.full_path_name());
@@ -5949,6 +5968,9 @@ bool MeshVisitor(const lightusd::Path &abs_path, const lightusd::Prim &prim,
             *visitorEnv->env, abs_path, *pcube, material_path,
             subset_material_path_map, visitorEnv->converter->materialMap,
             material_subsets, blendshapes, &rmesh)) {
+      if (SkipInvalidGeometry(visitorEnv, "Cube", abs_path)) {
+        return true;
+      }
       if (err) {
         (*err) += fmt::format("Cube conversion failed: {}",
                               abs_path.full_path_name());
@@ -6048,6 +6070,9 @@ bool MeshVisitor(const lightusd::Path &abs_path, const lightusd::Prim &prim,
             *visitorEnv->env, abs_path, *psphere, material_path,
             subset_material_path_map, visitorEnv->converter->materialMap,
             material_subsets, blendshapes, &rmesh)) {
+      if (SkipInvalidGeometry(visitorEnv, "Sphere", abs_path)) {
+        return true;
+      }
       if (err) {
         (*err) += fmt::format("Sphere conversion failed: {}",
                               abs_path.full_path_name());
@@ -6138,6 +6163,9 @@ bool MeshVisitor(const lightusd::Path &abs_path, const lightusd::Prim &prim,
             *visitorEnv->env, abs_path, *pprim, material_path,
             subset_material_path_map, visitorEnv->converter->materialMap,
             material_subsets, blendshapes, &rmesh)) {
+      if (SkipInvalidGeometry(visitorEnv, primTypeName, abs_path)) {
+        return true;
+      }
       if (err) {
         (*err) += fmt::format("{} conversion failed: {}", primTypeName, abs_path.full_path_name());
         (*err) += "\n" + visitorEnv->converter->GetError() + "\n";

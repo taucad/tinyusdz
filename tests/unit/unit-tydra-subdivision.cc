@@ -1392,6 +1392,7 @@ def Xform "Root"
   lightusd::tydra::RenderSceneConverterEnv env(stage);
   env.mesh_config.subdivision_level = 1;
   env.mesh_config.max_skin_elementSize = 1;
+  env.mesh_config.skip_invalid_geometry = false;
 
   lightusd::tydra::RenderScene scene;
   lightusd::tydra::RenderSceneConverter converter;

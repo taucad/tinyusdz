@@ -271,6 +271,7 @@ TEST_LIST = {
     tydra_analytic_shape_facevarying_attrs_test },
   { "tydra_memory_tracking_test", tydra_memory_tracking_test },
   { "tydra_degenerate_face_skip_test", tydra_degenerate_face_skip_test },
+  { "tydra_invalid_mesh_skip_test", tydra_invalid_mesh_skip_test },
   { "tydra_scene_access_helper_test", tydra_scene_access_helper_test },
   { "tydra_shader_scene_access_test", tydra_shader_scene_access_test },
   { "tydra_skel_scene_access_test", tydra_skel_scene_access_test },

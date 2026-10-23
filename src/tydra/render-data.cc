@@ -1927,8 +1927,16 @@ bool RenderSceneConverter::ConvertDeferredMeshes(
 
   std::vector<RenderMesh> outputs(items.size());
   std::vector<uint8_t> ok(items.size(), 0);
+  std::vector<uint8_t> skipped(items.size(), 0);
   std::vector<std::string> slot_warn(items.size());
+  std::vector<std::string> slot_errs(items.size());
   std::string slot_err;  // first worker failure aborts the merge anyway
+  const bool skip_invalid = env.mesh_config.skip_invalid_geometry;
+  auto skip_warning = [&](size_t i) {
+    return fmt::format("{} conversion failed; skipping `{}`: {}\n",
+                       DeferredFailureKindName(items[i]),
+                       items[i].abs_path.full_path_name(), slot_errs[i]);
+  };
 
   if (num_workers > 1 && items.size() > 1) {
     tydra::TaskArena arena(num_workers);
@@ -1947,7 +1955,7 @@ bool RenderSceneConverter::ConvertDeferredMeshes(
 
       DiagCapture cap;
       cap.warn = &slot_warn[i];
-      cap.err = &slot_err;
+      cap.err = skip_invalid ? &slot_errs[i] : &slot_err;
       DiagCapture *prev = SetDiagCapture(&cap);
       const bool converted =
           ConvertMeshWorkItem(env, items[i], &outputs[i]);
@@ -1955,6 +1963,8 @@ bool RenderSceneConverter::ConvertDeferredMeshes(
 
       if (converted) {
         ok[i] = 1;
+      } else if (skip_invalid) {
+        skipped[i] = 1;
       } else {
         failed.store(true, std::memory_order_relaxed);
       }
@@ -1986,13 +1996,15 @@ bool RenderSceneConverter::ConvertDeferredMeshes(
       }
       DiagCapture cap;
       cap.warn = &slot_warn[i];
-      cap.err = &slot_err;
+      cap.err = skip_invalid ? &slot_errs[i] : &slot_err;
       DiagCapture *prev = SetDiagCapture(&cap);
       const bool converted =
           ConvertMeshWorkItem(env, items[i], &outputs[i]);
       SetDiagCapture(prev);
       if (converted) {
         ok[i] = 1;
+      } else if (skip_invalid) {
+        skipped[i] = 1;
       } else {
         if (err) {
           (*err) += DeferredFailureMessage(items[i], slot_err);
@@ -2011,17 +2023,28 @@ bool RenderSceneConverter::ConvertDeferredMeshes(
   for (size_t i = 0; i < items.size(); i++) {
     const MeshWorkItem &item = items[i];
 
+    if (skipped[i]) {
+      _warn += slot_warn[i];
+      _warn += skip_warning(i);
+      continue;
+    }
+
     // Serial-tagged items (skinned meshes) convert here, on this thread, at
     // their exact position in traversal order -- so skeleton registration
     // and mesh ids match the fully-serial path.
     if (!ok[i]) {
       DiagCapture cap;
-      cap.err = &slot_err;
+      cap.err = skip_invalid ? &slot_errs[i] : &slot_err;
       cap.warn = &slot_warn[i];
       DiagCapture *prev = SetDiagCapture(&cap);
       const bool converted = ConvertMeshWorkItem(env, item, &outputs[i]);
       SetDiagCapture(prev);
 
+      if (!converted && skip_invalid) {
+        _warn += slot_warn[i];
+        _warn += skip_warning(i);
+        continue;
+      }
       if (!converted) {
         if (err) {
           // Errors were captured into slot_err by this item's DiagCapture.

@@ -156,6 +156,14 @@ bool BuildUDIMAtlas(const std::vector<UDIMTile> &tiles,
 struct MeshConverterConfig {
   bool triangulate{true};
 
+  //
+  // When a single Mesh/Cube/Sphere/... prim cannot be converted (e.g. a face
+  // vertex index out of range, an invalid blend shape), skip that prim with a
+  // warning and convert the rest of the scene. When false, the first invalid
+  // geometry prim fails the whole conversion.
+  //
+  bool skip_invalid_geometry{true};
+
   // Subdivision surface tessellation level. When > 0, meshes with authored
   // subdivisionScheme are tessellated before downstream Tydra mesh conversion.
   int32_t subdivision_level{0};
