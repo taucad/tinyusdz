@@ -1288,6 +1288,200 @@ static bool ProcessIncludes(const std::string &base_dir, std::string &xml_str,
   return true;
 }
 
+
+// MaterialX surface shader node category -> USD `info:id`.
+static const char *SurfaceShaderInfoId(const std::string &category) {
+  if (category == "standard_surface") {
+    return kNdStandardSurfaceSurfaceshader;
+  }
+  if (category == "open_pbr_surface" || category == "OpenPBRSurface") {
+    return kNdOpenPbrSurfaceSurfaceshader;
+  }
+  if (category == "UsdPreviewSurface") {
+    return kNdUsdPreviewSurfaceSurfaceshader;
+  }
+  return nullptr;
+}
+
+static const char *kMtlxRootPath = "/MaterialX";
+
+// Store one `<input>` of a document-level node as a USD shader input:
+// a typed value, or a connection to `/MaterialX/NodeGraphs/<ng>.outputs:<out>`
+// or `/MaterialX/Shaders/<node>.outputs:out`. Returns the names of
+// document-level nodes the input connects to in `referenced`.
+static void AddDocumentLevelInput(const lightusd::mtlx::pugi::xml_node &inp,
+                                  PrimSpec &ps,
+                                  std::vector<std::string> *referenced,
+                                  std::string *warn, std::string *err) {
+  const std::string name = inp.attribute("name").as_string();
+  if (name.empty()) {
+    return;
+  }
+  const std::string prop_name = "inputs:" + name;
+  const std::string type_name = inp.attribute("type").as_string();
+
+  lightusd::mtlx::pugi::xml_attribute nodegraph_attr = inp.attribute("nodegraph");
+  lightusd::mtlx::pugi::xml_attribute nodename_attr = inp.attribute("nodename");
+  if (nodegraph_attr || nodename_attr) {
+    std::string target;
+    if (nodegraph_attr) {
+      lightusd::mtlx::pugi::xml_attribute output_attr = inp.attribute("output");
+      const std::string output = output_attr ? output_attr.as_string() : "out";
+      target = std::string(kMtlxRootPath) + "/NodeGraphs/" +
+               nodegraph_attr.as_string() + ".outputs:" + output;
+    } else {
+      const std::string node = nodename_attr.as_string();
+      target = std::string(kMtlxRootPath) + "/Shaders/" + node + ".outputs:out";
+      if (referenced) {
+        referenced->push_back(node);
+      }
+    }
+    Attribute attr;
+    attr.set_type_name(type_name);
+    attr.set_connections({Path(target, "")});
+    ps.props()[prop_name] = Property(attr);
+    return;
+  }
+
+  lightusd::mtlx::pugi::xml_attribute value_attr = inp.attribute("value");
+  if (!value_attr) {
+    return;
+  }
+  const std::string str = value_attr.as_string();
+  std::string perr;
+  bool ok = false;
+  Attribute attr;
+  if (type_name == "float") {
+    float v{};
+    if ((ok = ParseMaterialXValue(str, &v, &perr))) attr = Attribute(v);
+  } else if (type_name == "integer") {
+    int v{};
+    if ((ok = ParseMaterialXValue(str, &v, &perr))) attr = Attribute(v);
+  } else if (type_name == "boolean") {
+    bool v{};
+    if ((ok = ParseMaterialXValue(str, &v, &perr))) attr = Attribute(v);
+  } else if (type_name == "color3") {
+    value::color3f v{};
+    if ((ok = ParseMaterialXValue(str, &v, &perr))) attr = Attribute(v);
+  } else if (type_name == "color4") {
+    value::float4 v{};
+    if ((ok = ParseMaterialXValue(str, &v, &perr))) {
+      attr = Attribute(value::color4f{v[0], v[1], v[2], v[3]});
+    }
+  } else if (type_name == "vector2") {
+    value::float2 v{};
+    if ((ok = ParseMaterialXValue(str, &v, &perr))) attr = Attribute(v);
+  } else if (type_name == "vector3") {
+    if (name.find("normal") != std::string::npos) {
+      value::normal3f v{};
+      if ((ok = ParseMaterialXValue(str, &v, &perr))) attr = Attribute(v);
+    } else if (name.find("tangent") != std::string::npos) {
+      value::vector3f v{};
+      if ((ok = ParseMaterialXValue(str, &v, &perr))) attr = Attribute(v);
+    } else {
+      value::float3 v{};
+      if ((ok = ParseMaterialXValue(str, &v, &perr))) attr = Attribute(v);
+    }
+  } else if (type_name == "vector4") {
+    value::float4 v{};
+    if ((ok = ParseMaterialXValue(str, &v, &perr))) attr = Attribute(v);
+  } else if (type_name == "string") {
+    ok = true;
+    attr = Attribute(str);
+  } else if (type_name == "filename") {
+    ok = true;
+    attr = Attribute(value::AssetPath(str));
+  } else {
+    PUSH_WARN(fmt::format("MaterialX input `{}` of type `{}` is not converted.\n",
+                          name, type_name));
+    return;
+  }
+  if (!ok) {
+    PUSH_WARN(fmt::format("Failed to parse MaterialX input `{}` value `{}`: {}\n",
+                          name, str, perr));
+    return;
+  }
+  lightusd::mtlx::pugi::xml_attribute colorspace_attr = inp.attribute("colorspace");
+  if (colorspace_attr) {
+    attr.metas().set_colorSpace(colorspace_attr.as_string());
+  }
+  ps.props()[prop_name] = Property(attr);
+}
+
+// Build Shader PrimSpecs for the document-level surface shaders and, through
+// their `nodename` connections, the document-level nodes they use.
+static void BuildDocumentLevelShaderPrims(const lightusd::mtlx::pugi::xml_node &root,
+                                          const MtlxConfig &config,
+                                          MtlxModel *mtlx, std::string *warn,
+                                          std::string *err) {
+  std::map<std::string, lightusd::mtlx::pugi::xml_node> nodes;
+  for (auto child : root) {
+    lightusd::mtlx::pugi::xml_attribute name_attr = child.attribute("name");
+    if (name_attr) {
+      nodes[name_attr.as_string()] = child;
+    }
+  }
+
+  std::vector<std::string> pending;
+  for (auto child : root) {
+    if (SurfaceShaderInfoId(child.name())) {
+      pending.push_back(child.attribute("name").as_string());
+    }
+  }
+
+  while (!pending.empty()) {
+    const std::string node_name = pending.back();
+    pending.pop_back();
+    if (node_name.empty() || mtlx->shader_prims.count(node_name)) {
+      continue;
+    }
+    auto it = nodes.find(node_name);
+    if (it == nodes.end()) {
+      PUSH_WARN(fmt::format("MaterialX node `{}` is referenced but not defined.\n",
+                            node_name));
+      continue;
+    }
+    const lightusd::mtlx::pugi::xml_node &node = it->second;
+    const std::string category = node.name();
+    if (category == "nodegraph" || category == "surfacematerial") {
+      continue;
+    }
+
+    PrimSpec ps;
+    std::vector<std::string> referenced;
+    if (const char *info_id = SurfaceShaderInfoId(category)) {
+      InitializeShader(ps, info_id);
+      ps.name() = node_name;
+      for (auto inp : node.children("input")) {
+        AddDocumentLevelInput(inp, ps, &referenced, warn, err);
+      }
+      Attribute out;
+      out.set_type_name(value::kToken);
+      ps.props()["outputs:surface"] = Property(out);
+    } else {
+      // A pattern node (image, multiply, ...): convert it like a node inside
+      // a nodegraph, then make its document-level connections absolute.
+      bool is_skip = false;
+      std::string node_err;
+      if (!ConvertSingleNode(node, ps, is_skip, config, warn, &node_err) || is_skip) {
+        PUSH_WARN(fmt::format("Failed to convert MaterialX node `{}`: {}\n",
+                              node_name, node_err));
+        continue;
+      }
+      ps.name() = node_name;
+      for (auto inp : node.children("input")) {
+        if (inp.attribute("nodename") || inp.attribute("nodegraph")) {
+          AddDocumentLevelInput(inp, ps, &referenced, warn, err);
+        }
+      }
+    }
+    for (const auto &r : referenced) {
+      pending.push_back(r);
+    }
+    mtlx->shader_prims[node_name] = std::move(ps);
+  }
+}
+
 }  // namespace detail
 
 bool ReadMaterialXFromString(const std::string &str,
@@ -2018,6 +2212,8 @@ bool ReadMaterialXFromString(const std::string &str,
     mtlx->surface_materials[material_name] = mat;
   }
 
+  detail::BuildDocumentLevelShaderPrims(root, config, mtlx, warn, err);
+
   // look.
   for (auto look : root.children("look")) {
     PUSH_WARN("TODO: `look`");
@@ -2101,7 +2297,7 @@ bool ToPrimSpec(const MtlxModel &model, PrimSpec &ps, std::string *err) {
   } else if (model.shader_name == kOpenPBRSurface) {
     ps.props()["info:id"] =
         detail::MakeProperty(value::token(kOpenPBRSurface));
-  } else {
+  } else if (model.shader_prims.empty()) {
     PUSH_ERROR_AND_RETURN("Unsupported shader_name: " << model.shader_name);
   }
 
@@ -2121,6 +2317,16 @@ bool ToPrimSpec(const MtlxModel &model, PrimSpec &ps, std::string *err) {
           detail::MakeProperty(model.version);
     }
 
+    // The material's MaterialX terminal, connected to its surface shader.
+    if (model.shader_prims.count(item.second.nodename)) {
+      Attribute surface;
+      surface.set_type_name(value::kToken);
+      surface.set_connections({Path(std::string("/MaterialX/Shaders/") +
+                                        item.second.nodename + ".outputs:surface",
+                                    "")});
+      material.props()["outputs:mtlx:surface"] = Property(surface);
+    }
+
     materials.children().push_back(std::move(material));
   }
 
@@ -2128,8 +2334,17 @@ bool ToPrimSpec(const MtlxModel &model, PrimSpec &ps, std::string *err) {
   shaders.name() = "Shaders";
   shaders.specifier() = Specifier::Def;
 
-  // Serialize shader values as child PrimSpecs
+  // Shader prims with their inputs and connections.
+  for (const auto &shader_item : model.shader_prims) {
+    shaders.children().push_back(shader_item.second);
+  }
+
+  // Models built without the XML (e.g. by hand) only carry typed shader
+  // values; emit those shaders with their info:id.
   for (const auto &shader_item : model.shaders) {
+    if (model.shader_prims.count(shader_item.first)) {
+      continue;
+    }
     PrimSpec shader_ps;
     shader_ps.name() = shader_item.first;
     shader_ps.specifier() = Specifier::Def;

@@ -200,6 +200,7 @@ TEST_LIST = {
   { "nodegraph_reconstruct_from_layer_test", nodegraph_reconstruct_from_layer_test },
   { "materialx_shader_constants_test", materialx_shader_constants_test },
   { "materialx_shader_fallback_values_test", materialx_shader_fallback_values_test },
+  { "materialx_reference_shaded_tydra_test", materialx_reference_shaded_tydra_test },
   { "usdpreviewsurface_displacement_test", usdpreviewsurface_displacement_test },
   { "usduvtexture_uvset_test", usduvtexture_uvset_test },
   { "openpbr_opacity_precedence_test", openpbr_opacity_precedence_test },

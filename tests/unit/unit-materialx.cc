@@ -36,6 +36,11 @@
 #include "value-types.hh"
 #include "lightusd.hh"
 #include "math-util.inc"
+#include "tydra/render-data.hh"
+#include "tydra/render-data-converter.hh"
+
+#include <cstring>
+#include <map>
 
 using namespace lightusd;
 
@@ -882,3 +887,158 @@ void materialx_tests(void) {
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
+
+namespace {
+
+// In-memory files served through a custom resolver handler.
+struct MtlxVirtualFiles {
+  std::map<std::string, std::string> files;
+};
+
+int mtlx_vfs_resolve(const char *asset_name, const std::vector<std::string> &search_paths,
+                     std::string *resolved, std::string *err, void *userdata) {
+  auto *vfs = static_cast<MtlxVirtualFiles *>(userdata);
+  std::string name(asset_name);
+  if (name.rfind("./", 0) == 0) {
+    name = name.substr(2);
+  }
+  if (vfs->files.count(name)) {
+    *resolved = name;
+    return 0;
+  }
+  for (const auto &dir : search_paths) {
+    std::string candidate = dir + "/" + name;
+    if (vfs->files.count(candidate)) {
+      *resolved = candidate;
+      return 0;
+    }
+  }
+  if (err) {
+    *err = "not found: " + name;
+  }
+  return -1;
+}
+
+int mtlx_vfs_size(const char *resolved, uint64_t *nbytes, std::string *err, void *userdata) {
+  auto *vfs = static_cast<MtlxVirtualFiles *>(userdata);
+  auto it = vfs->files.find(resolved);
+  if (it == vfs->files.end()) {
+    if (err) *err = "missing";
+    return -1;
+  }
+  *nbytes = it->second.size();
+  return 0;
+}
+
+int mtlx_vfs_read(const char *resolved, uint64_t req, uint8_t *out, uint64_t *nbytes,
+                  std::string *err, void *userdata) {
+  auto *vfs = static_cast<MtlxVirtualFiles *>(userdata);
+  auto it = vfs->files.find(resolved);
+  if (it == vfs->files.end()) {
+    if (err) *err = "missing";
+    return -1;
+  }
+  uint64_t n = (std::min)(req, uint64_t(it->second.size()));
+  memcpy(out, it->second.data(), size_t(n));
+  *nbytes = n;
+  return 0;
+}
+
+}  // namespace
+
+void materialx_reference_shaded_tydra_test(void) {
+  // A Scope referencing a .mtlx sidecar's </MaterialX> root must yield a
+  // Material whose outputs:mtlx:surface reaches the standard_surface shader
+  // with its authored inputs, so Tydra produces a shaded RenderMaterial.
+  MtlxVirtualFiles vfs;
+  vfs.files["/virt/scene/materials/brass.mtlx"] =
+      "<?xml version=\"1.0\"?>\n<materialx version=\"1.38\">\n"
+      "  <standard_surface name=\"SR_brass\" type=\"surfaceshader\">\n"
+      "    <input name=\"base_color\" type=\"color3\" value=\"1, 0.766, 0.336\" />\n"
+      "    <input name=\"metalness\" type=\"float\" value=\"1\" />\n"
+      "    <input name=\"specular_roughness\" type=\"float\" value=\"0.25\" />\n"
+      "  </standard_surface>\n"
+      "  <surfacematerial name=\"Brass\" type=\"material\">\n"
+      "    <input name=\"surfaceshader\" type=\"surfaceshader\" nodename=\"SR_brass\" />\n"
+      "  </surfacematerial>\n</materialx>\n";
+  const std::string root_usda = R"(#usda 1.0
+(
+    defaultPrim = "World"
+)
+def Xform "World"
+{
+    def Mesh "Tri" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+        rel material:binding = </World/Looks/Materials/Brass>
+    }
+
+    def Scope "Looks" (
+        prepend references = @./materials/brass.mtlx@</MaterialX>
+    )
+    {
+    }
+}
+)";
+
+  Layer root_layer;
+  std::string warn, err;
+  TEST_CHECK(LoadLayerFromMemory(
+      reinterpret_cast<const uint8_t *>(root_usda.data()), root_usda.size(),
+      "/virt/scene/scene.usda", &root_layer, &warn, &err));
+  TEST_MSG("LoadLayerFromMemory error: %s", err.c_str());
+
+  AssetResolutionHandler handler;
+  handler.resolve_fun = mtlx_vfs_resolve;
+  handler.size_fun = mtlx_vfs_size;
+  handler.read_fun = mtlx_vfs_read;
+  handler.userdata = &vfs;
+  AssetResolutionResolver resolver;
+  resolver.register_wildcard_asset_resolution_handler(handler);
+  resolver.set_current_working_path("/virt/scene");
+
+  Layer composed;
+  ReferencesCompositionOptions options;
+  TEST_CHECK(CompositeReferences(resolver, root_layer, &composed, &warn, &err, options));
+  TEST_MSG("CompositeReferences error: %s", err.c_str());
+
+  Stage stage;
+  TEST_CHECK(LayerToStage(std::move(composed), &stage, &warn, &err));
+  TEST_MSG("LayerToStage error: %s", err.c_str());
+
+  // The material's MaterialX terminal is connected to the shader.
+  const Prim *mat_prim = nullptr;
+  TEST_CHECK(stage.find_prim_at_path(Path("/World/Looks/Materials/Brass", ""), mat_prim, &err));
+  TEST_ASSERT(mat_prim != nullptr);
+  const Material *mat = mat_prim->as<Material>();
+  TEST_ASSERT(mat != nullptr);
+  TEST_CHECK(mat->mtlxSurface.authored());
+  const auto conns = mat->mtlxSurface.get_connections();
+  TEST_ASSERT(conns.size() == 1);
+  TEST_CHECK(conns[0].prim_part() == "/World/Looks/Shaders/SR_brass");
+  TEST_MSG("connection: %s", conns[0].full_path_name().c_str());
+
+  tydra::RenderSceneConverter converter;
+  tydra::RenderSceneConverterEnv env(stage);
+  env.asset_resolver = resolver;
+  tydra::RenderScene scene;
+  TEST_CHECK(converter.ConvertToRenderScene(env, &scene));
+  TEST_MSG("ConvertToRenderScene error: %s", converter.GetError().c_str());
+  TEST_ASSERT(scene.materials.size() == 1);
+  const tydra::RenderMaterial &rmat = scene.materials[0];
+  TEST_CHECK(rmat.name == "Brass");
+  TEST_ASSERT(rmat.openPBRShader.has_value());
+  const tydra::OpenPBRSurfaceShader &pbr = rmat.openPBRShader.value();
+  TEST_CHECK(std::fabs(pbr.base_color.value[0] - 1.0f) < 1e-5f);
+  TEST_CHECK(std::fabs(pbr.base_color.value[1] - 0.766f) < 1e-5f);
+  TEST_CHECK(std::fabs(pbr.base_color.value[2] - 0.336f) < 1e-5f);
+  TEST_CHECK(std::fabs(pbr.base_metalness.value - 1.0f) < 1e-5f);
+  TEST_CHECK(std::fabs(pbr.specular_roughness.value - 0.25f) < 1e-5f);
+  TEST_MSG("base_color (%f %f %f) metalness %f roughness %f", pbr.base_color.value[0],
+           pbr.base_color.value[1], pbr.base_color.value[2], pbr.base_metalness.value,
+           pbr.specular_roughness.value);
+}

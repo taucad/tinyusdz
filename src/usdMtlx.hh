@@ -104,6 +104,13 @@ struct MtlxModel {
   std::map<std::string, value::Value> light_shaders; // Light shaders (EDF nodes)
   std::map<std::string, PrimSpec> nodegraphs; // NodeGraph PrimSpecs
   std::map<std::string, std::vector<MtlxShaderConnection>> shader_connections; // Shader name -> list of connections
+
+  // USD Shader PrimSpecs for the document-level nodes: every surface shader
+  // (with `info:id`, all authored inputs and their connections) and the
+  // document-level nodes they connect to. Connections are absolute paths
+  // under `/MaterialX` (`/MaterialX/Shaders/...`, `/MaterialX/NodeGraphs/...`)
+  // so that composition remaps them onto the referencing prim.
+  std::map<std::string, PrimSpec> shader_prims;
 };
 
 struct MtlxUsdPreviewSurface : UsdPreviewSurface {

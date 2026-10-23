@@ -4819,6 +4819,11 @@ bool RenderSceneConverter::ConvertMaterial(const RenderSceneConverterEnv &env,
       }
       surfacePath = paths[0];
       has_surface_connection = true;
+    } else if (material.mtlxSurface.authored() ||
+               material.props.count("outputs:mtlx:surface.connect") ||
+               material.props.count("outputs:mtlx:surface")) {
+      // A MaterialX-only material: its terminal is outputs:mtlx:surface,
+      // handled below.
     } else if (env.material_config.strict_material_check) {
       PUSH_ERROR_AND_RETURN(fmt::format(
           "{}'s outputs:surface isn't authored.",
