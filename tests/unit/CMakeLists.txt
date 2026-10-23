@@ -24,6 +24,8 @@ set(TEST_SOURCES
 	unit-xform.cc
 	unit-math.cc
 	unit-ioutil.cc
+	unit-c-standard.cc
+	unit-c-standard.c
 	unit-timesamples.cc
 	unit-fp-parse-print.cc
 	unit-minijson.cc

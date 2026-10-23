@@ -430,6 +430,15 @@ if (PROJECT_IS_TOP_LEVEL)
   set(CMAKE_CXX_EXTENSIONS OFF)
 endif()
 
+# LightUSD's bundled C sources need C11 (nanoimage uses max_align_t). Request
+# it in LightUSD's own directory scope, also when LightUSD is a subproject of
+# a parent that builds its C code as C90/C99. A newer parent standard is kept.
+if (NOT DEFINED CMAKE_C_STANDARD OR CMAKE_C_STANDARD STREQUAL "90" OR
+    CMAKE_C_STANDARD STREQUAL "99")
+  set(CMAKE_C_STANDARD 11)
+endif()
+set(CMAKE_C_STANDARD_REQUIRED ON)
+
 if(MSVC)
   # nonstd::expected (src/nonstd/expected.hpp) includes <windows.h> when built
   # without exceptions (our default); without NOMINMAX its min/max macros

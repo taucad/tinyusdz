@@ -28,6 +28,7 @@
 #include "unit-fp-parse-print.h"
 #include "unit-pprint.h"
 #include "unit-materialx.h"
+#include "unit-c-standard.h"
 #include "unit-task-queue.h"
 #include "unit-png-stream.h"
 #include "unit-ptx.h"
@@ -201,6 +202,7 @@ TEST_LIST = {
   { "materialx_shader_constants_test", materialx_shader_constants_test },
   { "materialx_shader_fallback_values_test", materialx_shader_fallback_values_test },
   { "materialx_reference_shaded_tydra_test", materialx_reference_shaded_tydra_test },
+  { "c_standard_c11_test", c_standard_c11_test },
   { "usdpreviewsurface_displacement_test", usdpreviewsurface_displacement_test },
   { "usduvtexture_uvset_test", usduvtexture_uvset_test },
   { "openpbr_opacity_precedence_test", openpbr_opacity_precedence_test },
