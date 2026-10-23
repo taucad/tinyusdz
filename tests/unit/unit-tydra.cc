@@ -4989,3 +4989,69 @@ def Xform "root"
     }
   }
 }
+
+void tydra_material_node_category_test(void) {
+  // Material, Shader and NodeGraph prims are tagged NodeCategory::Material.
+  std::string usda = R"(#usda 1.0
+def Xform "root"
+{
+    def Mesh "Tri" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+        rel material:binding = </root/Looks/Mat>
+    }
+    def Scope "Looks"
+    {
+        def Material "Mat"
+        {
+            token outputs:surface.connect = </root/Looks/Mat/Surf.outputs:surface>
+            def Shader "Surf"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                token outputs:surface
+            }
+            def NodeGraph "Graph"
+            {
+            }
+        }
+    }
+}
+)";
+
+  Stage stage;
+  std::string warn;
+  std::string err;
+  TEST_CHECK(LoadUSDAFromMemory(
+      reinterpret_cast<const uint8_t *>(usda.data()), usda.size(),
+      "", &stage, &warn, &err));
+
+  tydra::RenderSceneConverterEnv env(stage);
+  tydra::RenderScene scene;
+  tydra::RenderSceneConverter converter;
+  TEST_CHECK(converter.ConvertToRenderScene(env, &scene));
+  TEST_MSG("ConvertToRenderScene failed: %s", converter.GetError().c_str());
+
+  std::map<std::string, tydra::NodeCategory> categories;
+  std::vector<const tydra::Node *> stack;
+  for (const auto &n : scene.nodes) {
+    stack.push_back(&n);
+  }
+  while (!stack.empty()) {
+    const tydra::Node *n = stack.back();
+    stack.pop_back();
+    categories[n->abs_path] = n->category;
+    for (const auto &c : n->children) {
+      stack.push_back(&c);
+    }
+  }
+  TEST_CHECK(categories.count("/root/Looks/Mat") == 1);
+  TEST_CHECK(categories["/root/Looks/Mat"] == tydra::NodeCategory::Material);
+  TEST_CHECK(categories["/root/Looks/Mat/Surf"] == tydra::NodeCategory::Material);
+  TEST_CHECK(categories["/root/Looks/Mat/Graph"] == tydra::NodeCategory::Material);
+  TEST_CHECK(categories["/root/Looks"] == tydra::NodeCategory::Group);
+  TEST_CHECK(categories["/root/Tri"] == tydra::NodeCategory::Geom);
+}

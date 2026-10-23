@@ -1540,8 +1540,14 @@ bool RenderSceneConverter::BuildSingleNode(
       rnode.nodeType = NodeType::Xform;
     }
 
-    // Set category based on nodeType
+    // Set category based on nodeType. Material, Shader and NodeGraph prims
+    // become Xform nodes but are shading data, not scene objects.
     rnode.category = GetNodeCategoryFromType(rnode.nodeType);
+    if (prim->type_id() == value::TYPE_ID_MATERIAL ||
+        prim->type_id() == value::TYPE_ID_SHADER ||
+        prim->type_id() == value::TYPE_ID_NODEGRAPH) {
+      rnode.category = NodeCategory::Material;
+    }
 
     // AOUSD Spec 11.3.3: Mark instance prims
     if (prim->IsInstance() && prim->HasCompositionArcs()) {
