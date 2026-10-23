@@ -1088,7 +1088,7 @@ void crate_writer_usd_uv_texture_test(void) {
     uv_texture.file.set_value(file_anim);
 
     // Set texture coordinates
-    Animatable<value::texcoord2f> st_anim(value::texcoord2f{0.5f, 0.5f});
+    Animatable<value::float2> st_anim(value::float2{0.5f, 0.5f});
     uv_texture.st.set_value(st_anim);
 
     // Set wrap modes

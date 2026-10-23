@@ -3198,8 +3198,8 @@ bool RenderSceneConverter::ConvertUVTexture(const RenderSceneConverterEnv &env,
 
     } else {
       //LIGHTUSD_LOG_I("get_value");
-      Animatable<value::texcoord2f> fallbacks = texture.st.get_value();
-      value::texcoord2f uv;
+      Animatable<value::float2> fallbacks = texture.st.get_value();
+      value::float2 uv;
       if (fallbacks.get(env.timecode, &uv)) {
         tex.fallback_uv[0] = uv[0];
         tex.fallback_uv[1] = uv[1];

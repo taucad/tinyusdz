@@ -724,21 +724,24 @@ bool CrateWriter::AddUsdUVTextureInputSpecs(
   auto add_input_spec_with_timesamples_float2 = [&](
       const std::string& input_name,
       const crate::CrateValue& default_value,
-      const Animatable<value::texcoord2f>* animatable,
+      const Animatable<value::float2>* animatable,
       const std::vector<Path>* connections = nullptr) -> bool {
-    // First add the default value spec (with connectionPaths if also connected)
-    if (!add_input_spec(input_name, "texCoord2f", default_value, connections)) {
+    // First add the default value spec (with connectionPaths if also connected).
+    // UsdPreviewSurface defines UsdUVTexture `inputs:st` as float2; a
+    // texCoord2f declaration fails usdchecker's Sdr type conformance.
+    if (!add_input_spec(input_name, "float2", default_value, connections)) {
       return false;
     }
 
     // If there are timesamples, create a separate timeSamples spec
     if (animatable && animatable->has_timesamples()) {
-      // texcoord2f store -> float2 crate values (crate stores the underlying type).
       value::TimeSamples ts;
       if (const value::TimeSamples *_tsp = animatable->get_timesamples_ptr()) {
         for (const auto &_s : _tsp->get_samples()) {
           if (_s.blocked) { ts.add_blocked_sample(_s.t, value::Value()); continue; }
-          if (const value::texcoord2f *tv = _s.value.as<value::texcoord2f>()) {
+          if (const value::float2 *fv = _s.value.as<value::float2>()) {
+            ts.add_sample(_s.t, value::Value(*fv));
+          } else if (const value::texcoord2f *tv = _s.value.as<value::texcoord2f>()) {
             value::float2 sample_as_float2 = {tv->s, tv->t};
             ts.add_sample(_s.t, value::Value(sample_as_float2));
           }
@@ -825,15 +828,14 @@ bool CrateWriter::AddUsdUVTextureInputSpecs(
     }
   }
 
-  // inputs:st (texcoord2f) - texture coordinates
+  // inputs:st (float2) - texture coordinates
   if (uv_texture->st.authored()) {
     const std::vector<Path>* conns = uv_texture->st.has_connections()
         ? &uv_texture->st.connections() : nullptr;
-    value::texcoord2f st = {0.0f, 0.0f};
+    value::float2 st = {0.0f, 0.0f};
     if (uv_texture->st.has_value() && uv_texture->st.get_value().get_scalar(&st)) {
-      value::float2 st_as_float2 = {st.s, st.t};
       crate::CrateValue st_value;
-      st_value.Set(st_as_float2);
+      st_value.Set(st);
       if (!add_input_spec_with_timesamples_float2("inputs:st", st_value, &uv_texture->st.get_value(), conns)) {
         return false;
       }
