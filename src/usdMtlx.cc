@@ -1833,7 +1833,7 @@ bool ReadMaterialXFromString(const std::string &str,
                        valueStr, surface.opacityThreshold)
       GET_SHADER_PARAM(name, typeName, "ior", "float", float, valueStr,
                        surface.ior)
-      GET_SHADER_PARAM(name, typeName, "normal", "vector3f", value::normal3f,
+      GET_SHADER_PARAM(name, typeName, "normal", "vector3", value::normal3f,
                        valueStr, surface.normal)
       GET_SHADER_PARAM(name, typeName, "displacement", "float", float, valueStr,
                        surface.displacement)
