@@ -818,6 +818,8 @@ TEST_LIST = {
     tydra_renderscene_hole_indices_test },
   { "tydra_renderscene_lefthanded_normals_test",
     tydra_renderscene_lefthanded_normals_test },
+  { "tydra_renderscene_primvar_reader_connection_test",
+    tydra_renderscene_primvar_reader_connection_test },
   // Phase 5: Tydra shader / scene-access tests
   { "tydra_shader_list_prims_test", tydra_shader_list_prims_test },
   { "tydra_shader_list_shaders_test", tydra_shader_list_shaders_test },

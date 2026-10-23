@@ -176,6 +176,10 @@ class ShaderParam {
  //private:
   T value{};
   int32_t texture_id{-1};  // negative = invalid
+  // Primvar the input reads per vertex through a connected
+  // UsdPrimvarReader_* (`inputs:varname`); empty when there is none. `value`
+  // then holds the input's authored value or schema fallback.
+  std::string primvar_name;
 };
 
 // UsdPreviewSurface

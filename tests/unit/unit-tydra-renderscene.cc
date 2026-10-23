@@ -1464,3 +1464,106 @@ def Mesh "Tri" {
   TEST_CHECK(lz < -0.5f);
   TEST_MSG("leftHanded mesh: expected -Z normal, got z = %f", double(lz));
 }
+
+// A UsdPreviewSurface input connected to a UsdPrimvarReader_* `outputs:result`
+// (vertex colours: a displayColor reader feeding diffuseColor) is valid USD.
+// Tydra records the primvar name, keeps the authored/fallback value and does
+// not fail the material. A connection it cannot interpret at all (here a
+// UsdUVTexture output that does not exist) warns and keeps the default.
+void tydra_renderscene_primvar_reader_connection_test(void) {
+  const char *usda = R"(#usda 1.0
+def Xform "Root"
+{
+  def Mesh "quad" (
+    prepend apiSchemas = ["MaterialBindingAPI"]
+  )
+  {
+    int[] faceVertexCounts = [3]
+    int[] faceVertexIndices = [0, 1, 2]
+    point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+    color3f[] primvars:displayColor = [(1, 0, 0), (0, 1, 0), (0, 0, 1)] (
+      interpolation = "vertex"
+    )
+    rel material:binding = </Root/Materials/VC>
+  }
+  def Scope "Materials"
+  {
+    def Material "VC"
+    {
+      token outputs:surface.connect = </Root/Materials/VC/Surface.outputs:surface>
+      def Shader "Surface"
+      {
+        uniform token info:id = "UsdPreviewSurface"
+        color3f inputs:diffuseColor.connect = </Root/Materials/VC/displayColorReader.outputs:result>
+        float inputs:opacity = 0.75
+        float inputs:opacity.connect = </Root/Materials/VC/opacityReader.outputs:result>
+        float inputs:roughness.connect = </Root/Materials/VC/Tex.outputs:nonsense>
+        token outputs:surface
+      }
+      def Shader "displayColorReader"
+      {
+        uniform token info:id = "UsdPrimvarReader_float3"
+        string inputs:varname = "displayColor"
+        float3 outputs:result
+      }
+      def Shader "opacityReader"
+      {
+        uniform token info:id = "UsdPrimvarReader_float"
+        string inputs:varname = "displayOpacity"
+        float outputs:result
+      }
+      def Shader "Tex"
+      {
+        uniform token info:id = "UsdUVTexture"
+        asset inputs:file = @missing.png@
+        float3 outputs:rgb
+      }
+    }
+  }
+}
+)";
+
+  Stage stage;
+  std::string warn, err;
+  bool ok = LoadUSDAFromMemory(
+      reinterpret_cast<const uint8_t *>(usda), std::strlen(usda),
+      "test.usda", &stage, &warn, &err);
+  TEST_CHECK(ok);
+  TEST_MSG("LoadUSDAFromMemory failed: %s", err.c_str());
+
+  tydra::RenderSceneConverterEnv env(stage);
+  tydra::RenderScene scene;
+  tydra::RenderSceneConverter converter;
+  ok = converter.ConvertToRenderScene(env, &scene);
+  TEST_CHECK(ok);
+  TEST_MSG("ConvertToRenderScene failed: %s", converter.GetError().c_str());
+
+  TEST_ASSERT(scene.materials.size() == 1);
+  TEST_ASSERT(scene.meshes.size() == 1);
+  TEST_CHECK(scene.meshes[0].material_id == 0);
+  const tydra::RenderMaterial &mat = scene.materials[0];
+  TEST_ASSERT(mat.surfaceShader.has_value());
+  const tydra::PreviewSurfaceShader &s = *mat.surfaceShader;
+
+  TEST_CHECK(s.diffuseColor.primvar_name == "displayColor");
+  TEST_MSG("diffuseColor primvar: `%s`", s.diffuseColor.primvar_name.c_str());
+  TEST_CHECK(!s.diffuseColor.is_texture());
+  TEST_CHECK(math::is_close(s.diffuseColor.value[0], 0.18f, 1e-6f));
+  TEST_CHECK(math::is_close(s.diffuseColor.value[2], 0.18f, 1e-6f));
+
+  TEST_CHECK(s.opacity.primvar_name == "displayOpacity");
+  TEST_CHECK(math::is_close(s.opacity.value, 0.75f, 1e-6f));
+
+  TEST_CHECK(s.roughness.primvar_name.empty());
+  TEST_CHECK(!s.roughness.is_texture());
+  TEST_CHECK(math::is_close(s.roughness.value, 0.5f, 1e-6f));
+  TEST_CHECK(converter.GetWarning().find("roughness") != std::string::npos);
+  TEST_MSG("warning: %s", converter.GetWarning().c_str());
+
+  // strict_material_check keeps rejecting the unresolvable connection.
+  tydra::RenderSceneConverterEnv strict_env(stage);
+  strict_env.material_config.strict_material_check = true;
+  tydra::RenderScene strict_scene;
+  tydra::RenderSceneConverter strict_converter;
+  TEST_CHECK(!strict_converter.ConvertToRenderScene(strict_env, &strict_scene));
+}

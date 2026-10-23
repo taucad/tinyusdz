@@ -649,6 +649,66 @@ nonstd::expected<bool, std::string> ConvertTexTransform2d(
   return true;
 }
 
+// If `conn` targets the `outputs:result` of a UsdPrimvarReader_* shader,
+// return true and store the primvar it reads (`inputs:varname`, may be empty)
+// in `varname`. Such a connection is valid USD (e.g. a displayColor reader
+// feeding UsdPreviewSurface diffuseColor); it is per-vertex data, not a
+// texture, so callers keep the input's value and expose the primvar name.
+template <typename R>
+static bool ReadPrimvarReaderVarname(const Shader &shader, std::string *varname) {
+  const R *reader = shader.value.as<R>();
+  if (!reader) {
+    return false;
+  }
+  auto v = reader->varname.get_value();
+  if (v) {
+    std::string name;
+    if (v.value().get_default(&name)) {
+      *varname = name;
+    }
+  }
+  return true;
+}
+
+static bool GetConnectedPrimvarReader(const Stage &stage, const Path &conn,
+                                      std::string *varname) {
+  if (conn.prop_part() != "outputs:result") {
+    return false;
+  }
+  const Prim *prim{nullptr};
+  std::string err;
+  if (!stage.find_prim_at_path(Path(conn.prim_part(), ""), prim, &err) ||
+      !prim) {
+    return false;
+  }
+  const Shader *shader = prim->as<Shader>();
+  if (!shader || shader->info_id.rfind("UsdPrimvarReader_", 0) != 0) {
+    return false;
+  }
+  varname->clear();
+  if (ReadPrimvarReaderVarname<UsdPrimvarReader_float>(*shader, varname) ||
+      ReadPrimvarReaderVarname<UsdPrimvarReader_float2>(*shader, varname) ||
+      ReadPrimvarReaderVarname<UsdPrimvarReader_float3>(*shader, varname) ||
+      ReadPrimvarReaderVarname<UsdPrimvarReader_float4>(*shader, varname) ||
+      ReadPrimvarReaderVarname<UsdPrimvarReader_int>(*shader, varname) ||
+      ReadPrimvarReaderVarname<UsdPrimvarReader_normal>(*shader, varname) ||
+      ReadPrimvarReaderVarname<UsdPrimvarReader_vector>(*shader, varname) ||
+      ReadPrimvarReaderVarname<UsdPrimvarReader_point>(*shader, varname)) {
+    return true;
+  }
+  // Untyped shader: read `inputs:varname` from its properties.
+  auto it = shader->props.find("inputs:varname");
+  if (it != shader->props.end() && it->second.is_attribute()) {
+    const Attribute &a = it->second.get_attribute();
+    if (auto s = a.get_value<std::string>()) {
+      *varname = *s;
+    } else if (auto t = a.get_value<value::token>()) {
+      *varname = t->str();
+    }
+  }
+  return true;
+}
+
 template <typename T>
 nonstd::expected<bool, std::string> GetConnectedUVTexture(
     const Stage &stage, const TypedAnimatableAttributeWithFallback<T> &src,
@@ -3860,6 +3920,24 @@ bool RenderSceneConverter::ConvertPreviewSurfaceShaderParam(
       }
     }
 
+    // A UsdPrimvarReader_* output (e.g. displayColor feeding diffuseColor)
+    // is per-vertex data, not a texture: record the primvar name and keep
+    // the input's authored value, or its schema fallback.
+    if (!is_materialx && param.get_connections().size() == 1) {
+      std::string varname;
+      if (GetConnectedPrimvarReader(env.stage, param.get_connections()[0],
+                                    &varname)) {
+        dst_param.primvar_name = varname;
+        T authored_val;
+        if (!param.is_value_empty() &&
+            param.get_value().get(env.timecode, &authored_val)) {
+          dst_param.set_value(authored_val);
+        }
+        DCOUT(fmt::format("{} reads primvar `{}`", param_name, varname));
+        return true;
+      }
+    }
+
     // Fall back to standard UsdUVTexture handling
     const UsdUVTexture *ptex{nullptr};
     const Shader *pshader{nullptr};
@@ -3910,7 +3988,16 @@ bool RenderSceneConverter::ConvertPreviewSurfaceShaderParam(
             param_name, result.error()));
         return true;
       }
-      PUSH_ERROR_AND_RETURN(result.error());
+      // A connection Tydra cannot interpret leaves the input at its schema
+      // fallback instead of failing the whole material.
+      if (env.material_config.strict_material_check) {
+        PUSH_ERROR_AND_RETURN(result.error());
+      }
+      PushWarn(fmt::format(
+          "{} connection could not be resolved to a UsdUVTexture ({}); using "
+          "the parameter default instead.",
+          param_name, result.error()));
+      return true;
     }
 
     if (!ptex) {
@@ -3950,7 +4037,14 @@ bool RenderSceneConverter::ConvertPreviewSurfaceShaderParam(
     } else if (prop_part == "outputs:rgb") {
       rtex.connectedOutputChannel = tydra::UVTexture::Channel::RGB;
     } else {
-      PUSH_ERROR_AND_RETURN(fmt::format("Unknown or invalid connection to a property of output channel: {}(Abs path {})", prop_part, texPath.full_path_name()));
+      if (env.material_config.strict_material_check) {
+        PUSH_ERROR_AND_RETURN(fmt::format("Unknown or invalid connection to a property of output channel: {}(Abs path {})", prop_part, texPath.full_path_name()));
+      }
+      PushWarn(fmt::format(
+          "{}: unknown output channel `{}` of {}; using the parameter default "
+          "instead.",
+          param_name, prop_part, texPath.prim_part()));
+      return true;
     }
 
 
