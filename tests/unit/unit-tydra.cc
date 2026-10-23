@@ -5130,3 +5130,77 @@ def SkelRoot "root"
   TEST_CHECK(sparse.pointIndices.size() == 1);
   TEST_CHECK(sparse.pointOffsets.size() == 1);
 }
+
+void tydra_blendshape_malformed_skipped_test(void) {
+  // A BlendShape with out-of-range or negative pointIndices, or with an
+  // offsets count that does not match pointIndices, is dropped with a
+  // warning; the mesh and its other BlendShapes are still converted.
+  const char *variants[] = {
+      "uniform vector3f[] offsets = [(0, 0, 1), (0, 0, 1)]\n"
+      "            uniform int[] pointIndices = [1, 4096]",
+      "uniform vector3f[] offsets = [(0, 0, 1)]\n"
+      "            uniform int[] pointIndices = [-1]",
+      "uniform vector3f[] offsets = [(0, 0, 1)]\n"
+      "            uniform int[] pointIndices = [0, 1, 2]",
+      "uniform vector3f[] offsets = [(0, 0, 1)]",
+  };
+  for (const char *variant : variants) {
+    std::string usda = std::string(R"(#usda 1.0
+def SkelRoot "root"
+{
+    def Skeleton "Skel"
+    {
+        uniform matrix4d[] bindTransforms = [( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )]
+        uniform token[] joints = ["Root"]
+        uniform matrix4d[] restTransforms = [( (1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1) )]
+    }
+    def Mesh "Face" (
+        prepend apiSchemas = ["SkelBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+        uniform token[] skel:blendShapes = ["good", "bad"]
+        rel skel:blendShapeTargets = [</root/Face/good>, </root/Face/bad>]
+        rel skel:skeleton = </root/Skel>
+
+        def BlendShape "good"
+        {
+            uniform vector3f[] offsets = [(0, 0, 5)]
+            uniform int[] pointIndices = [1]
+        }
+        def BlendShape "bad"
+        {
+            )") + variant + R"(
+        }
+    }
+}
+)";
+
+    Stage stage;
+    std::string warn;
+    std::string err;
+    TEST_CHECK(LoadUSDAFromMemory(
+        reinterpret_cast<const uint8_t *>(usda.data()), usda.size(), "",
+        &stage, &warn, &err));
+    TEST_MSG("%s: %s", variant, err.c_str());
+
+    tydra::RenderSceneConverterEnv env(stage);
+    tydra::RenderScene scene;
+    tydra::RenderSceneConverter converter;
+    TEST_CHECK(converter.ConvertToRenderScene(env, &scene));
+    TEST_MSG("%s: %s", variant, converter.GetError().c_str());
+    TEST_CHECK(scene.meshes.size() == 1);
+    TEST_MSG("%s: %zu meshes", variant, scene.meshes.size());
+    if (scene.meshes.size() != 1) {
+      continue;
+    }
+    const tydra::RenderMesh &mesh = scene.meshes[0];
+    TEST_CHECK(mesh.targets.count("good") == 1);
+    TEST_CHECK(mesh.targets.count("bad") == 0);
+    TEST_MSG("%s", variant);
+    TEST_CHECK(converter.GetWarning().find("bad") != std::string::npos);
+    TEST_MSG("%s: warning: %s", variant, converter.GetWarning().c_str());
+  }
+}

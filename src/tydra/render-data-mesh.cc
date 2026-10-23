@@ -5066,22 +5066,33 @@ bool RenderSceneConverter::ConvertMesh(
       }
     }
 
+    // A malformed BlendShape is dropped with a warning; the mesh itself is
+    // still valid without it.
+    if (vertex_offsets.size() != vertex_indices.size()) {
+      PUSH_WARN(fmt::format(
+          "BlendShape `{}` has {} offsets for {} pointIndices. Skipping.",
+          bs_path, vertex_offsets.size(), vertex_indices.size()));
+      continue;
+    }
+
     // Validate and convert indices in-place.
     shapeTarget.pointIndices.reserve(vertex_indices.size());
+    bool bad_index = false;
     for (size_t i = 0; i < vertex_indices.size(); i++) {
-      if (vertex_indices[i] < 0) {
-        PUSH_ERROR_AND_RETURN(fmt::format(
-            "negative index in `pointIndices`. Prim path: `{}`", bs_path));
-      }
-
-      if (uint32_t(vertex_indices[i]) >= dst.points.size()) {
-        PUSH_ERROR_AND_RETURN(
-            fmt::format("pointIndices[{}] {} exceeds the number of points in "
-                        "GeomMesh {}. Prim path: `{}`",
-                        i, vertex_indices[i], dst.points.size(), bs_path));
+      if (vertex_indices[i] < 0 ||
+          uint32_t(vertex_indices[i]) >= dst.points.size()) {
+        PUSH_WARN(fmt::format(
+            "pointIndices[{}] {} of BlendShape `{}` is out of range for {} "
+            "points. Skipping the BlendShape.",
+            i, vertex_indices[i], bs_path, dst.points.size()));
+        bad_index = true;
+        break;
       }
 
       shapeTarget.pointIndices.push_back(uint32_t(vertex_indices[i]));
+    }
+    if (bad_index) {
+      continue;
     }
 
     if (vertex_offsets.size() &&

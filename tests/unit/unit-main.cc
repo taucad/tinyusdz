@@ -276,6 +276,7 @@ TEST_LIST = {
   { "tydra_invalid_mesh_skip_test", tydra_invalid_mesh_skip_test },
   { "tydra_material_node_category_test", tydra_material_node_category_test },
   { "tydra_blendshape_dense_and_path_test", tydra_blendshape_dense_and_path_test },
+  { "tydra_blendshape_malformed_skipped_test", tydra_blendshape_malformed_skipped_test },
   { "tydra_scene_access_helper_test", tydra_scene_access_helper_test },
   { "tydra_shader_scene_access_test", tydra_shader_scene_access_test },
   { "tydra_skel_scene_access_test", tydra_skel_scene_access_test },
