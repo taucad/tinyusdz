@@ -55,6 +55,44 @@ void EmitAnimatableTimeSamples(const std::string &name,
   fields.push_back({name + ".timeSamples", ts_crate_val});
 }
 
+// Emit a typed attribute's AttrMeta (interpolation, elementSize, ...) as
+// `<name>.<meta>` fields, which the stage-converter's prop_entries router
+// attaches to the attribute spec (see the `points`/`normals` emit in
+// ExtractMeshProperties). AddArrayAttribute writes only the value, so typed
+// writers that use it call this to keep e.g. `normals` interpolation.
+void EmitAttrMetaFields(const std::string &name, const AttrMeta &metas,
+                        crate::FieldValuePairVector &fields) {
+  if (metas.has_interpolation()) {
+    crate::CrateValue v; v.Set(metas.get_interpolation());
+    fields.push_back({name + ".interpolation", v});
+  }
+  if (metas.has_elementSize()) {
+    crate::CrateValue v;
+    v.Set(static_cast<int32_t>(metas.get_elementSize()));
+    fields.push_back({name + ".elementSize", v});
+  }
+  if (metas.has_customData()) {
+    crate::CrateValue v; v.Set(metas.get_customData());
+    fields.push_back({name + ".customData", v});
+  }
+  if (metas.has_displayName()) {
+    crate::CrateValue v; v.Set(metas.get_displayName());
+    fields.push_back({name + ".displayName", v});
+  }
+  if (metas.has_displayGroup()) {
+    crate::CrateValue v; v.Set(metas.get_displayGroup());
+    fields.push_back({name + ".displayGroup", v});
+  }
+  if (metas.has_doc()) {
+    crate::CrateValue v; v.Set(metas.get_doc().value);
+    fields.push_back({name + ".documentation", v});
+  }
+  if (metas.has_hidden()) {
+    crate::CrateValue v; v.Set(metas.get_hidden());
+    fields.push_back({name + ".hidden", v});
+  }
+}
+
 }  // namespace
 
 namespace experimental {
@@ -827,6 +865,7 @@ bool CrateWriter::ExtractPointsProperties(
         }
       }
     }
+    EmitAttrMetaFields("points", points->points.metas(), fields);
   }
 
   // Extract widths (float[]) - TypedAttribute returns optional
@@ -844,6 +883,7 @@ bool CrateWriter::ExtractPointsProperties(
         }
       }
     }
+    EmitAttrMetaFields("widths", points->widths.metas(), fields);
   }
 
   // Extract ids (int64[])
@@ -867,6 +907,7 @@ bool CrateWriter::ExtractPointsProperties(
         }
       }
     }
+    EmitAttrMetaFields("ids", points->ids.metas(), fields);
   }
 
   // Extract normals (normal3f[]) - TypedAttribute returns optional
@@ -884,6 +925,7 @@ bool CrateWriter::ExtractPointsProperties(
         }
       }
     }
+    EmitAttrMetaFields("normals", points->normals.metas(), fields);
   }
 
   // Extract velocities (vector3f[]) - TypedAttribute returns optional
@@ -902,6 +944,7 @@ bool CrateWriter::ExtractPointsProperties(
       }
       EmitAnimatableTimeSamples("velocities", velocities_anim, fields);
     }
+    EmitAttrMetaFields("velocities", points->velocities.metas(), fields);
   }
 
   // Extract accelerations (vector3f[]) - TypedAttribute returns optional
@@ -920,6 +963,7 @@ bool CrateWriter::ExtractPointsProperties(
       }
       EmitAnimatableTimeSamples("accelerations", accelerations_anim, fields);
     }
+    EmitAttrMetaFields("accelerations", points->accelerations.metas(), fields);
   }
 
   return ExtractGPrimProperties(prim, prim_path, fields, err);
@@ -1197,6 +1241,7 @@ bool CrateWriter::ExtractBasisCurvesProperties(
         }
       }
     }
+    EmitAttrMetaFields("normals", basis_curves->normals.metas(), fields);
   }
 
   // Extract velocities (vector3f[]) - TypedAttribute returns optional

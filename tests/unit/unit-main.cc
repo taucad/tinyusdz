@@ -919,6 +919,7 @@ TEST_LIST = {
   { "usdc_writer_mesh_subdiv_test", usdc_writer_mesh_subdiv_test },
   { "usdc_writer_mesh_velocities_test", usdc_writer_mesh_velocities_test },
   { "usdc_writer_points_test", usdc_writer_points_test },
+  { "usdc_writer_points_attr_metas_test", usdc_writer_points_attr_metas_test },
   { "usdc_writer_basiscurves_test", usdc_writer_basiscurves_test },
   { "usdc_writer_geomsubset_test", usdc_writer_geomsubset_test },
   { "usdc_writer_camera_test", usdc_writer_camera_test },

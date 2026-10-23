@@ -176,6 +176,43 @@ def Points "pts" {
   TEST_CHECK(pts->accelerations.authored());
 }
 
+// Points widths/normals interpolation (and other AttrMeta) must survive the
+// usdc writer; it used to write only the values, so pxr saw `widths` and
+// `normals` with no interpolation (falling back to vertex/varying silently).
+void usdc_writer_points_attr_metas_test(void) {
+  const char *usda = R"(#usda 1.0
+def Points "pts" {
+  point3f[] points = [(0,0,0),(1,1,1),(2,2,2)]
+  float[] widths = [0.5] (interpolation = "constant")
+  normal3f[] normals = [(0,1,0),(0,1,0),(0,1,0)] (
+    interpolation = "varying"
+    elementSize = 1
+  )
+}
+def BasisCurves "c" {
+  int[] curveVertexCounts = [3]
+  point3f[] points = [(0,0,0),(1,0,0),(2,0,0)]
+  normal3f[] normals = [(0,1,0)] (interpolation = "uniform")
+}
+)";
+  RT_OK(usda);
+  const auto *pts = find_root<GeomPoints>(stage, "pts");
+  TEST_CHECK(pts != nullptr);
+  if (!pts) return;
+  TEST_CHECK(pts->widths.metas().has_interpolation());
+  TEST_CHECK(pts->widths.metas().get_interpolation().str() == "constant");
+  TEST_CHECK(pts->normals.metas().has_interpolation());
+  TEST_CHECK(pts->normals.metas().get_interpolation().str() == "varying");
+  TEST_CHECK(pts->normals.metas().has_elementSize());
+  TEST_CHECK(pts->normals.metas().get_elementSize() == 1);
+
+  const auto *bc = find_root<GeomBasisCurves>(stage, "c");
+  TEST_CHECK(bc != nullptr);
+  if (!bc) return;
+  TEST_CHECK(bc->normals.metas().has_interpolation());
+  TEST_CHECK(bc->normals.metas().get_interpolation().str() == "uniform");
+}
+
 void usdc_writer_basiscurves_test(void) {
   const char *usda = R"(#usda 1.0
 def BasisCurves "curves" {
