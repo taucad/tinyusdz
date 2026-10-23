@@ -640,6 +640,7 @@ TEST_LIST = {
   { "comp_sublayer_variant_sets_merge_test", comp_sublayer_variant_sets_merge_test },
   { "comp_sublayer_custom_resolver_relative_test", comp_sublayer_custom_resolver_relative_test },
   { "comp_missing_asset_warning_per_load_test", comp_missing_asset_warning_per_load_test },
+  { "comp_sublayer_missing_follows_option_test", comp_sublayer_missing_follows_option_test },
   { "comp_sublayer_path_expression_weaker_test", comp_sublayer_path_expression_weaker_test },
   { "comp_override_basic_test", comp_override_basic_test },
   { "comp_override_replace_property_test", comp_override_replace_property_test },

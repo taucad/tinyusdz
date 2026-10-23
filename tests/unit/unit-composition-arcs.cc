@@ -3000,3 +3000,59 @@ def Xform "Root" (
     TEST_MSG("pass %d warn: %s err: %s", pass, warn.c_str(), err.c_str());
   }
 }
+
+void comp_sublayer_missing_follows_option_test(void) {
+  // A subLayer that cannot be resolved warns and the remaining layers are
+  // composed, unless error_when_asset_not_found is set.
+  VirtualFiles vfs;
+  vfs.files["/virt/scene/base.usda"] = R"(#usda 1.0
+def Xform "FromBase"
+{
+}
+)";
+  const std::string root_usda = R"(#usda 1.0
+(
+    subLayers = [
+        @./missing.usda@,
+        @./base.usda@
+    ]
+)
+def Xform "FromRoot"
+{
+}
+)";
+
+  for (int strict = 0; strict < 2; strict++) {
+    Layer root_layer;
+    std::string warn, err;
+    TEST_CHECK(LoadLayerFromMemory(
+        reinterpret_cast<const uint8_t *>(root_usda.data()), root_usda.size(),
+        "/virt/scene/root.usda", &root_layer, &warn, &err));
+
+    AssetResolutionHandler handler;
+    handler.resolve_fun = vfs_resolve;
+    handler.size_fun = vfs_size;
+    handler.read_fun = vfs_read;
+    handler.userdata = &vfs;
+    AssetResolutionResolver resolver;
+    resolver.register_wildcard_asset_resolution_handler(handler);
+    resolver.set_current_working_path("/virt/scene");
+
+    SublayersCompositionOptions options;
+    options.error_when_asset_not_found = (strict == 1);
+    Layer composed;
+    const bool ok = CompositeSublayers(resolver, root_layer, &composed, &warn, &err, options);
+    if (strict) {
+      TEST_CHECK(!ok);
+      TEST_CHECK(err.find("missing.usda") != std::string::npos);
+      TEST_MSG("err: %s", err.c_str());
+    } else {
+      TEST_CHECK(ok);
+      TEST_MSG("CompositeSublayers error: %s", err.c_str());
+      TEST_CHECK(warn.find("missing.usda") != std::string::npos);
+      TEST_MSG("warn: %s", warn.c_str());
+      TEST_CHECK(composed.primspecs().count("FromRoot") == 1);
+      TEST_CHECK(composed.primspecs().count("FromBase") == 1);
+    }
+  }
+}

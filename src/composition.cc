@@ -1263,9 +1263,21 @@ bool CompositeSublayersRec(AssetResolutionResolver &resolver,
 
     std::string layer_filepath = resolver.resolve(sublayer_asset_path);
     if (layer_filepath.empty()) {
-      PUSH_ERROR_AND_RETURN(fmt::format("{} not found in path: {}",
-                                        sublayer_asset_path,
-                                        resolver.search_paths_str()));
+      if (options.error_when_asset_not_found) {
+        PUSH_ERROR_AND_RETURN(fmt::format("{} not found in path: {}",
+                                          sublayer_asset_path,
+                                          resolver.search_paths_str()));
+      }
+      // Like a missing reference or payload: warn (once per load) and
+      // compose the remaining layers.
+      if (resolver.mark_warned(sublayer_asset_path)) {
+        PUSH_WARN(fmt::format("subLayer `{}` not found (current working path "
+                              "`{}`, search paths `{}`); skipped.",
+                              sublayer_asset_path,
+                              resolver.current_working_path(),
+                              resolver.search_paths_str()));
+      }
+      continue;
     }
 
     lightusd::Layer sublayer;

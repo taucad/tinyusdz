@@ -45,3 +45,4 @@ void comp_reference_keeps_local_children_test(void);
 void comp_timesamples_time_transform_test(void);
 void comp_sublayer_custom_resolver_relative_test(void);
 void comp_missing_asset_warning_per_load_test(void);
+void comp_sublayer_missing_follows_option_test(void);
