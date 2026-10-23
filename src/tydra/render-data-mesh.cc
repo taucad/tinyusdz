@@ -378,11 +378,6 @@ static nonstd::expected<std::vector<uint8_t>, std::string> ConstantToVertex(
   size_t faceVertexIndexOffset = 0;
   for (size_t i = 0; i < faceVertexCounts.size(); i++) {
     uint32_t cnt = faceVertexCounts[i];
-    if (cnt < 3) {
-      return nonstd::make_unexpected(fmt::format(
-          "faeVertexCounts[{}] must be equal to or greater than 3, but got {}",
-          i, cnt));
-    }
 
     for (size_t k = 0; k < cnt; k++) {
       size_t fv_idx = k + faceVertexIndexOffset;
@@ -1492,13 +1487,6 @@ bool TriangulatePolygon(
   for (size_t i = 0; i < faceVertexCounts.size(); i++) {
     uint32_t npolys = faceVertexCounts[i];
 
-    if (npolys < 3) {
-      err = fmt::format(
-          "faceVertex count must be 3(triangle) or "
-          "more(polygon), but got faceVertexCounts[{}] = {}\n",
-          i, npolys);
-      return false;
-    }
 
     if (faceIndexOffset + npolys > faceVertexIndices.size()) {
       err = fmt::format(
@@ -1511,7 +1499,8 @@ bool TriangulatePolygon(
     // Skip hole faces (`holeIndices` in USD GeomMesh): emit no triangles for
     // them. Still record a 0 entry in triangulatedFaceCounts so per-original-
     // face bookkeeping(e.g. GeomSubset face index remapping) stays aligned.
-    if (holeFaceIndices.count(uint32_t(i))) {
+    // Degenerate faces (fewer than 3 vertices) are skipped the same way.
+    if ((npolys < 3) || holeFaceIndices.count(uint32_t(i))) {
       triangulatedFaceCounts.push_back(0);
       faceIndexOffset += npolys;
       continue;
@@ -2895,12 +2884,20 @@ bool RenderSceneConverter::ConvertMesh(
     size_t sumCounts = 0;
     dst.usdFaceVertexCounts.clear();
     dst.usdFaceVertexCounts.reserve(counts.size());
+    size_t num_degenerate_faces = 0;
     for (size_t i = 0; i < counts.size(); i++) {
-      if (counts[i] < 3) {
+      if (counts[i] < 0) {
         PUSH_ERROR_AND_RETURN(
-            fmt::format("faceVertexCounts[{}] contains invalid value {}. The "
-                        "count value must be >= 3",
-                        i, counts[i]));
+            fmt::format("faceVertexCounts[{}] contains negative value {}.", i,
+                        counts[i]));
+      }
+      // Faces with fewer than 3 vertices are degenerate. Real-world exporters
+      // emit them (collapsed quads, line segments), so keep them in the
+      // topology to preserve face-varying/uniform primvar and GeomSubset
+      // alignment, and let triangulation emit no triangles for them, exactly
+      // like holeIndices.
+      if (counts[i] < 3) {
+        num_degenerate_faces++;
       }
 
       if ((sumCounts + size_t(counts[i])) > dst.usdFaceVertexIndices.size()) {
@@ -2910,6 +2907,12 @@ bool RenderSceneConverter::ConvertMesh(
       }
       dst.usdFaceVertexCounts.push_back(uint32_t(counts[i]));
       sumCounts += size_t(counts[i]);
+    }
+    if (num_degenerate_faces > 0) {
+      PUSH_WARN(fmt::format("{} has {} degenerate face(s) with fewer than 3 "
+                            "vertices; they produce no triangles.",
+                            abs_prim_path.full_path_name(),
+                            num_degenerate_faces));
     }
   }
 

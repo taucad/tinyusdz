@@ -1848,7 +1848,7 @@ void tydra_material_binding_validation_test(void) {
     uv_texture.outputsRGB.set_authored(true);
     uv_texture.file.set_value(
         Animatable<value::AssetPath>(value::AssetPath("dummy.png")));
-    uv_texture.st.set_value(Animatable<value::texcoord2f>());
+    uv_texture.st.set_value(Animatable<value::float2>());
 
     Shader tex_shader;
     tex_shader.info_id = kUsdUVTexture;
@@ -4884,4 +4884,46 @@ void tydra_value_clip_animation_custom_property_test(void) {
   TEST_CHECK(NearlyEqual(anim.samplers[traj_sampler].values[7], 2.0f));
 
   cleanup();
+}
+
+void tydra_degenerate_face_skip_test(void) {
+  // A collapsed face (2 vertices) between two valid faces must not abort the
+  // mesh. It is kept in the topology so the face-varying `st` stays aligned,
+  // and triangulation emits no triangles for it.
+  std::string usda = R"(#usda 1.0
+def Mesh "m"
+{
+    int[] faceVertexCounts = [3, 2, 4]
+    int[] faceVertexIndices = [0, 1, 2, 2, 3, 2, 3, 4, 5]
+    point3f[] points = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 2, 0), (1, 2, 0)]
+    texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (9, 9), (9, 9), (0.1, 0.1), (0.2, 0.2), (0.3, 0.3), (0.4, 0.4)] (
+        interpolation = "faceVarying"
+    )
+}
+)";
+
+  Stage stage;
+  std::string warn;
+  std::string err;
+  TEST_CHECK(LoadUSDAFromMemory(
+      reinterpret_cast<const uint8_t *>(usda.data()), usda.size(),
+      "", &stage, &warn, &err));
+  TEST_MSG("LoadUSDAFromMemory failed: %s", err.c_str());
+
+  tydra::RenderSceneConverterEnv env(stage);
+  env.mesh_config.triangulate = true;
+  tydra::RenderScene scene;
+  tydra::RenderSceneConverter converter;
+  TEST_CHECK(converter.ConvertToRenderScene(env, &scene));
+  TEST_MSG("ConvertToRenderScene failed: %s", converter.GetError().c_str());
+  TEST_CHECK(scene.meshes.size() == 1);
+  if (scene.meshes.empty()) {
+    return;
+  }
+  const tydra::RenderMesh &mesh = scene.meshes[0];
+  // 1 triangle from the first face, none from the degenerate face, 2 from the quad.
+  TEST_CHECK(mesh.faceVertexCounts().size() == 3);
+  TEST_MSG("triangles: %d", int(mesh.faceVertexCounts().size()));
+  TEST_CHECK(mesh.faceVertexIndices().size() == 9);
+  TEST_CHECK(converter.GetWarning().find("degenerate") != std::string::npos);
 }

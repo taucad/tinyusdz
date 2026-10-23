@@ -255,7 +255,9 @@ bool ComputeTangentsAndBinormals(
     }
 
     if (nv < 3) {
-      PUSH_ERROR_AND_RETURN("Degenerated facet found.");
+      // Degenerate facet: contributes no tangent frame.
+      faceVertexIndexOffset += nv;
+      continue;
     }
 
     // Process each two-edges per facet.
@@ -659,8 +661,9 @@ bool ComputeNormals(const std::vector<vec3> &vertices,
     size_t nv = faceVertexCounts[f];
 
     if (nv < 3) {
-      PUSH_ERROR_AND_RETURN(
-          fmt::format("Invalid face num {} at faceVertexCounts[{}]", nv, f));
+      // Degenerate face: contributes no face normal.
+      faceVertexIndexOffset += nv;
+      continue;
     }
 
     // For quad/polygon, first three vertices are used to compute face normal
