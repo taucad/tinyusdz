@@ -23,6 +23,10 @@
 #endif
 
 #include "usdc-reader-impl.hh"
+#include "pprint-enum.hh"
+
+#include <map>
+#include <set>
 
 #if !defined(LIGHTUSD_DISABLE_MODULE_USDC_READER)
 
@@ -90,6 +94,95 @@ bool USDCReader::Impl::ResolveFieldValuePairs(
   (*fvs) = &(_live_fieldsets->at(spec.fieldset_index));
   return true;
 }
+
+namespace {
+
+// The crate stores child prims in path-table (lexicographic) order; the
+// authored order is the `primChildren` field. Put each prim's children in that
+// order, as the USDA reader does, so traversal (e.g. Tydra) and a re-export
+// keep it.
+void OrderChildrenByPrimChildren(std::vector<Prim> &roots) {
+  std::vector<Prim *> stack;
+  for (Prim &p : roots) {
+    stack.push_back(&p);
+  }
+  while (!stack.empty()) {
+    Prim *prim = stack.back();
+    stack.pop_back();
+    std::vector<Prim> &children = prim->children();
+    if (children.size() > 1 &&
+        prim->metas().primChildren.size() == children.size()) {
+      bool valid = false;
+      const std::vector<int64_t> order =
+          prim->get_child_indices_from_primChildren(false, &valid);
+      bool identity = true;
+      for (size_t i = 0; i < order.size(); i++) {
+        identity = identity && order[i] == int64_t(i);
+      }
+      if (valid && !identity) {
+        std::vector<Prim> sorted;
+        sorted.reserve(children.size());
+        for (int64_t idx : order) {
+          sorted.push_back(std::move(children[size_t(idx)]));
+        }
+        children = std::move(sorted);
+      }
+    }
+    for (Prim &c : children) {
+      stack.push_back(&c);
+    }
+  }
+}
+
+// PrimSpec counterpart of OrderChildrenByPrimChildren: with `reorder`, put
+// the children in the authored `primChildren` order; keep that metadata on the
+// PrimSpec only with `keep_metadata` (pprint::GetPreserveAuthoredOrder()).
+void OrderPrimSpecChildrenByPrimChildren(Layer *layer, bool reorder,
+                                         bool keep_metadata) {
+  std::vector<PrimSpec *> stack;
+  for (auto &kv : layer->primspecs()) {
+    stack.push_back(&kv.second);
+  }
+  while (!stack.empty()) {
+    PrimSpec *ps = stack.back();
+    stack.pop_back();
+    std::vector<PrimSpec> &children = ps->children();
+    std::vector<value::token> &order = ps->metas().primChildren;
+    if (reorder && children.size() > 1 && order.size() == children.size()) {
+      std::map<std::string, size_t> index;
+      for (size_t i = 0; i < children.size(); i++) {
+        index.emplace(children[i].name(), i);
+      }
+      std::vector<size_t> perm;
+      perm.reserve(order.size());
+      std::set<size_t> seen;
+      for (const value::token &tok : order) {
+        auto it = index.find(tok.str());
+        if (it == index.end() || !seen.insert(it->second).second) {
+          perm.clear();
+          break;
+        }
+        perm.push_back(it->second);
+      }
+      if (perm.size() == children.size()) {
+        std::vector<PrimSpec> sorted;
+        sorted.reserve(children.size());
+        for (size_t idx : perm) {
+          sorted.push_back(std::move(children[idx]));
+        }
+        children = std::move(sorted);
+      }
+    }
+    if (!keep_metadata) {
+      order.clear();
+    }
+    for (PrimSpec &c : children) {
+      stack.push_back(&c);
+    }
+  }
+}
+
+}  // namespace
 
 bool USDCReader::Impl::ReconstructStage(Stage *stage) {
 
@@ -164,6 +257,8 @@ bool USDCReader::Impl::ReconstructStage(Stage *stage) {
   if (!ret) {
     PUSH_ERROR_AND_RETURN("Failed to reconstruct Stage(Prim hierarchy)");
   }
+
+  OrderChildrenByPrimChildren(stage->root_prims());
 
   stage->compute_absolute_prim_path_and_assign_prim_id();
 
@@ -247,6 +342,12 @@ bool USDCReader::Impl::ToLayer(Layer *layer) {
   if (!ret) {
     PUSH_ERROR_AND_RETURN("Failed to reconstruct Layer(PrimSpec hierarchy)");
   }
+
+  OrderPrimSpecChildrenByPrimChildren(
+      layer,
+      _config.order_children_by_primChildren ||
+          pprint::GetPreserveAuthoredOrder(),
+      pprint::GetPreserveAuthoredOrder());
 
   return true;
 }

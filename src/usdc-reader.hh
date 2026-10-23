@@ -58,6 +58,10 @@ struct USDCReaderConfig {
   // Memory optimization: decode fieldsets/properties on demand instead of
   // prebuilding all live fieldsets. Reduces peak memory for large files.
   bool use_lazy_property_construction = true;
+
+  // ToLayer: order each PrimSpec's children by the crate's `primChildren`
+  // field (authored order). Also on when pprint::GetPreserveAuthoredOrder().
+  bool order_children_by_primChildren = false;
 };
 
 class USDCReader {

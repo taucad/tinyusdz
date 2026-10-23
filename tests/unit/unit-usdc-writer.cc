@@ -14,6 +14,8 @@
 
 #include "lightusd.hh"
 #include "usdc-writer.hh"
+#include "composition.hh"
+#include "layer.hh"
 #include "usdGeom.hh"
 #include "usdSkel.hh"
 #include "usdShade.hh"
@@ -5140,4 +5142,70 @@ def Shader "S" {
   // info:id is `uniform token` per the UsdShade schema; it must not degrade to
   // `varying` through the USDC writer.
   TEST_CHECK(it->second.get_attribute().variability() == Variability::Uniform);
+}
+
+// The crate keeps child prims in path-table (lexicographic) order and the
+// authored order in `primChildren`; reading a usdc must restore the authored
+// order on the Stage (as a usda read does), or a re-export reorders them.
+void usdc_reader_authored_child_order_test(void) {
+  const char *usda = R"(#usda 1.0
+def Xform "root" {
+  def Xform "zeta" {}
+  def Xform "Bone_009" {}
+  def Xform "alpha" {
+    def Xform "c" {}
+    def Xform "b" {}
+  }
+  def Scope "Materials" {}
+}
+)";
+  RT_OK(usda);
+  const Prim *root = find_root_prim(stage, "root");
+  TEST_ASSERT(root != nullptr);
+  std::vector<std::string> names;
+  for (const auto &c : root->children()) {
+    names.push_back(c.element_name());
+  }
+  const std::vector<std::string> expected{"zeta", "Bone_009", "alpha", "Materials"};
+  TEST_CHECK(names == expected);
+  for (size_t i = 0; i < names.size(); i++) {
+    TEST_MSG("child %zu: %s", i, names[i].c_str());
+  }
+  TEST_ASSERT(root->children().size() == 4);
+  const Prim &alpha = root->children()[2];
+  TEST_ASSERT(alpha.children().size() == 2);
+  TEST_CHECK(alpha.children()[0].element_name() == "c");
+  TEST_CHECK(alpha.children()[1].element_name() == "b");
+
+  // Layer path (load layer, compose, LayerToStage): authored order with
+  // USDLoadOptions::preserve_authored_child_order; the default keeps the
+  // crate's lexicographic order.
+  std::vector<uint8_t> buf;
+  TEST_ASSERT(usdc::SaveAsUSDCToMemory(stage, &buf, &warn, &err));
+  {
+    Layer lex_layer;
+    TEST_ASSERT(LoadLayerFromMemory(buf.data(), buf.size(), "order.usdc",
+                                    &lex_layer, &warn, &err));
+    Stage lex;
+    TEST_ASSERT(LayerToStage(std::move(lex_layer), &lex, &warn, &err));
+    const Prim *r = find_root_prim(lex, "root");
+    TEST_ASSERT(r != nullptr && r->children().size() == 4);
+    TEST_CHECK(r->children()[0].element_name() == "Bone_009");
+  }
+  USDLoadOptions options;
+  options.preserve_authored_child_order = true;
+  Layer layer;
+  TEST_ASSERT(LoadLayerFromMemory(buf.data(), buf.size(), "order.usdc", &layer,
+                                  &warn, &err, options));
+  Stage from_layer;
+  TEST_ASSERT(LayerToStage(std::move(layer), &from_layer, &warn, &err));
+  const Prim *lroot = find_root_prim(from_layer, "root");
+  TEST_ASSERT(lroot != nullptr);
+  std::vector<std::string> lnames;
+  for (const auto &c : lroot->children()) {
+    lnames.push_back(c.element_name());
+  }
+  TEST_CHECK(lnames == expected);
+  TEST_ASSERT(lroot->children().size() == 4);
+  TEST_CHECK(lroot->children()[2].children()[0].element_name() == "c");
 }

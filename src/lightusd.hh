@@ -135,6 +135,13 @@ struct USDLoadOptions {
   ///
   bool strict_shader_type_check{false};
 
+  ///
+  /// USDC Layer loads: put each PrimSpec's children in the authored order
+  /// recorded in the crate's `primChildren` field instead of the crate's
+  /// lexicographic path order. (Stage loads always use the authored order.)
+  ///
+  bool preserve_authored_child_order{false};
+
   // ==========================================================================
   // MaterialX Validation Options
   // ==========================================================================

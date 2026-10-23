@@ -1363,6 +1363,7 @@ bool LoadUSDCLayerFromMemory(const uint8_t *addr, const size_t length,
   config.strict_allowedToken_check = options.strict_allowedToken_check;
   config.strict_shader_type_check = options.strict_shader_type_check;
   config.allow_unknown_apiSchemas = !options.strict_apiSchema_check;
+  config.order_children_by_primChildren = options.preserve_authored_child_order;
   usdc::USDCReader reader(&sr, config);
 
   // LIGHTUSD_CRATE_PROFILE=1: split the layer load into crate parse vs

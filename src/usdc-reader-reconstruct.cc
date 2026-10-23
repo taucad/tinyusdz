@@ -642,10 +642,10 @@ bool USDCReader::Impl::ReconstructPrimSpecNode(int parent, int current, int leve
         // NOTE: properties are intentionally NOT reordered -- pxr/usdcat sorts
         // properties alphabetically (its crate writer sorts the `properties`
         // field), which the default std::map order already matches.
-        if (pprint::GetPreserveAuthoredOrder()) {
-          if (pf.primMeta.primChildren.empty() && !pf.primChildren.empty()) {
-            pf.primMeta.primChildren = pf.primChildren;
-          }
+        // Always carried here: ToLayer orders the children by it and then
+        // drops it again unless GetPreserveAuthoredOrder() is set.
+        if (pf.primMeta.primChildren.empty() && !pf.primChildren.empty()) {
+          pf.primMeta.primChildren = pf.primChildren;
         }
         primspec->metas() = std::move(pf.primMeta);
 

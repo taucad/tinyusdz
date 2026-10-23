@@ -9,6 +9,7 @@ void usdc_writer_mesh_subdiv_test(void);
 void usdc_writer_mesh_velocities_test(void);
 void usdc_writer_points_test(void);
 void usdc_writer_points_attr_metas_test(void);
+void usdc_reader_authored_child_order_test(void);
 void usdc_writer_basiscurves_test(void);
 void usdc_writer_geomsubset_test(void);
 void usdc_writer_camera_test(void);
