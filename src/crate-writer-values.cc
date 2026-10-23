@@ -1384,8 +1384,12 @@ int64_t CrateWriter::WriteValueBody(const crate::CrateValue& value,
     for (const auto& str : *string_array) {
       idxs.push_back(GetOrCreateString(str).value);
     }
-    if (WriteCompressedArray32(reinterpret_cast<const uint32_t *>(idxs.data()), count,
-                              "string", is_compressed, err) < 0) {
+    // OpenUSD never integer-compresses string index arrays: it writes the
+    // uint32 indices raw and ignores the compressed bit for this type, so a
+    // compressed payload (>= 16 entries) reads back as garbage in pxr.
+    if (!idxs.empty() &&
+        !WriteBytes(idxs.data(), idxs.size() * sizeof(uint32_t))) {
+      if (err) *err = "Failed to write string array indices";
       return -1;
     }
   }
@@ -1404,8 +1408,12 @@ int64_t CrateWriter::WriteValueBody(const crate::CrateValue& value,
     for (const auto& ap : *asset_array) {
       idxs.push_back(GetOrCreateString(ap.GetAssetPath()).value);
     }
-    if (WriteCompressedArray32(reinterpret_cast<const uint32_t *>(idxs.data()), count,
-                              "assetPath", is_compressed, err) < 0) {
+    // OpenUSD never integer-compresses assetPath index arrays: it writes the
+    // uint32 indices raw and ignores the compressed bit for this type, so a
+    // compressed payload (>= 16 entries) reads back as garbage in pxr.
+    if (!idxs.empty() &&
+        !WriteBytes(idxs.data(), idxs.size() * sizeof(uint32_t))) {
+      if (err) *err = "Failed to write asset[] indices";
       return -1;
     }
   }
@@ -1471,8 +1479,12 @@ int64_t CrateWriter::WriteValueBody(const crate::CrateValue& value,
     for (const auto& tok : *token_array) {
       idxs.push_back(GetOrCreateToken(tok.str()).value);
     }
-    if (WriteCompressedArray32(reinterpret_cast<const uint32_t *>(idxs.data()), count,
-                              "token", is_compressed, err) < 0) {
+    // OpenUSD never integer-compresses token index arrays: it writes the
+    // uint32 indices raw and ignores the compressed bit for this type, so a
+    // compressed payload (>= 16 entries) reads back as garbage in pxr.
+    if (!idxs.empty() &&
+        !WriteBytes(idxs.data(), idxs.size() * sizeof(uint32_t))) {
+      if (err) *err = "Failed to write token array indices";
       return -1;
     }
   }

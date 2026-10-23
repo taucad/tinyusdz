@@ -19,7 +19,11 @@
 #include "core/model-scope.hh"
 #include "layer.hh"
 #include "pprint-enum.hh"
+#include "usdc-writer.hh"
+#include "usdSkel.hh"
+#include <algorithm>
 #include <cstdio>
+#include <cstring>
 
 using namespace lightusd;
 using namespace lightusd::experimental;
@@ -6820,8 +6824,12 @@ void crate_writer_compressed_uint_array_roundtrip_test(void) {
   cleanup_file(filename);
 }
 
-void crate_writer_compressed_string_token_asset_array_test(void) {
-  std::string filename = get_temp_filename("test_compressed_string_token_asset_array");
+// OpenUSD writes string/token/asset index arrays raw whatever their length
+// (only numeric arrays are integer-compressed); a compressed payload with the
+// compressed bit set reads back as garbage in pxr. Arrays here have 33
+// entries, above the 16-entry compression threshold.
+void crate_writer_string_token_asset_array_uncompressed_test(void) {
+  std::string filename = get_temp_filename("test_uncompressed_string_token_asset_array");
   std::string err;
 
   Stage stage;
@@ -7041,21 +7049,11 @@ void crate_writer_compressed_string_token_asset_array_test(void) {
         continue;
       }
       TEST_CHECK(field.value_rep.IsArray());
-      TEST_CHECK(field.value_rep.IsCompressed());
-      if (kind == ArrayKind::kString &&
-          field.value_rep.IsArray() &&
-          field.value_rep.IsCompressed()) {
-        compressed_string = true;
-      }
-      if (kind == ArrayKind::kToken &&
-          field.value_rep.IsArray() &&
-          field.value_rep.IsCompressed()) {
-        compressed_token = true;
-      }
-      if (kind == ArrayKind::kAsset &&
-          field.value_rep.IsArray() &&
-          field.value_rep.IsCompressed()) {
-        compressed_asset = true;
+      TEST_CHECK(!field.value_rep.IsCompressed());
+      if (field.value_rep.IsCompressed()) {
+        if (kind == ArrayKind::kString) compressed_string = true;
+        if (kind == ArrayKind::kToken) compressed_token = true;
+        if (kind == ArrayKind::kAsset) compressed_asset = true;
       }
     }
   }
@@ -7063,9 +7061,9 @@ void crate_writer_compressed_string_token_asset_array_test(void) {
   TEST_CHECK(found_string_spec);
   TEST_CHECK(found_token_spec);
   TEST_CHECK(found_asset_spec);
-  TEST_CHECK(compressed_string);
-  TEST_CHECK(compressed_token);
-  TEST_CHECK(compressed_asset);
+  TEST_CHECK(!compressed_string);
+  TEST_CHECK(!compressed_token);
+  TEST_CHECK(!compressed_asset);
 
   Stage loaded_stage;
   std::string warn;
@@ -8374,4 +8372,82 @@ void crate_writer_prim_children_test(void) {
 
   std::cerr << "primChildren roundtrip successful!\n";
   cleanup_file(filename);
+}
+
+// A 20-joint Skeleton written to usdc must store `joints` the way OpenUSD
+// does: uint64 count followed by the raw uint32 TokenIndex of each joint.
+// pxr reads token arrays as raw indices whatever the compressed bit says, so
+// the integer-compressed form previously written for >= 16 entries came back
+// as garbage joint names in usd-core.
+void crate_writer_skeleton_joints_raw_token_indices_test(void) {
+  std::string usda = "#usda 1.0\ndef Skeleton \"skel\" {\n  uniform token[] joints = [";
+  std::vector<std::string> joints;
+  std::string path;
+  for (int i = 0; i < 20; i++) {
+    path += (i ? "/j" : "j") + std::to_string(i);
+    joints.push_back(path);
+    usda += (i ? ", \"" : "\"") + path + "\"";
+  }
+  usda += "]\n}\n";
+
+  std::string warn, err;
+  Stage in_stage;
+  bool ok = LoadUSDAFromMemory(reinterpret_cast<const uint8_t *>(usda.data()),
+                               usda.size(), "skel.usda", &in_stage, &warn, &err);
+  TEST_CHECK(ok);
+  if (!ok) { TEST_MSG("usda load failed: %s", err.c_str()); return; }
+
+  std::vector<uint8_t> buf;
+  ok = usdc::SaveAsUSDCToMemory(in_stage, &buf, &warn, &err);
+  TEST_CHECK(ok);
+  if (!ok) { TEST_MSG("usdc write failed: %s", err.c_str()); return; }
+
+  StreamReader sr(buf.data(), buf.size(), /* swap_endian */ false);
+  lightusd::crate::CrateReader reader(&sr, {});
+  TEST_CHECK(reader.ReadBootStrap());
+  TEST_CHECK(reader.ReadTOC());
+  TEST_CHECK(reader.ReadTokens());
+  if (!reader.GetError().empty()) {
+    TEST_MSG("CrateReader error: %s", reader.GetError().c_str());
+    return;
+  }
+
+  // Expected payload: uint64 count + raw TokenIndex per joint.
+  std::vector<uint8_t> expected(sizeof(uint64_t) + joints.size() * sizeof(uint32_t));
+  const uint64_t count = joints.size();
+  std::memcpy(expected.data(), &count, sizeof(count));
+  const auto &tokens = reader.GetTokens();
+  for (size_t j = 0; j < joints.size(); j++) {
+    uint32_t idx = UINT32_MAX;
+    for (size_t t = 0; t < tokens.size(); t++) {
+      if (tokens[t].str() == joints[j]) { idx = uint32_t(t); break; }
+    }
+    TEST_CHECK(idx != UINT32_MAX);
+    TEST_MSG("joint token %s missing from the token table", joints[j].c_str());
+    std::memcpy(expected.data() + sizeof(uint64_t) + j * sizeof(uint32_t),
+                &idx, sizeof(idx));
+  }
+  const bool found =
+      std::search(buf.begin(), buf.end(), expected.begin(), expected.end()) !=
+      buf.end();
+  TEST_CHECK(found);
+  TEST_MSG("joints are not stored as 20 raw uint32 token indices");
+
+  Stage out_stage;
+  ok = LoadUSDCFromMemory(buf.data(), buf.size(), "skel.usdc", &out_stage,
+                          &warn, &err);
+  TEST_CHECK(ok);
+  if (!ok) { TEST_MSG("usdc reload failed: %s", err.c_str()); return; }
+  auto prim = out_stage.GetPrimAtPath(Path("/skel", ""));
+  TEST_CHECK(prim.has_value());
+  if (!prim) return;
+  const Skeleton *skel = prim.value()->data().as<Skeleton>();
+  TEST_CHECK(skel != nullptr);
+  if (!skel) return;
+  std::vector<value::token> got;
+  TEST_CHECK(skel->joints.get_value(&got));
+  TEST_CHECK(got.size() == joints.size());
+  for (size_t j = 0; j < got.size() && j < joints.size(); j++) {
+    TEST_CHECK(got[j].str() == joints[j]);
+  }
 }
