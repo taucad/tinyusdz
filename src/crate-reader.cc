@@ -92,7 +92,6 @@ CrateReader::CrateReader(StreamReader *sr, const CrateReaderConfig &config)
   if (_config.numThreads == -1) {
 #if defined(LIGHTUSD_ENABLE_THREAD) && !defined(__wasi__) && !defined(__EMSCRIPTEN__)
     _config.numThreads = (std::max)(1, int(std::thread::hardware_concurrency()));
-    PUSH_WARN("# of thread to use: " << std::to_string(_config.numThreads));
 #else
     _config.numThreads = 1;
 #endif
@@ -100,7 +99,8 @@ CrateReader::CrateReader(StreamReader *sr, const CrateReaderConfig &config)
 
 
 #if !defined(LIGHTUSD_ENABLE_THREAD) || defined(__wasi__) || defined(__EMSCRIPTEN__)
-  PUSH_WARN("Threading is disabled for this build.");
+  // Single-threaded builds are a configuration, not a per-file condition, so
+  // this is not reported as a load warning.
   _config.numThreads = 1;
 #else
 
