@@ -1,15 +1,39 @@
 // SPDX-License-Identifier: Apache 2.0
 // Copyright 2021 - Present, Light Transport Entertainment Inc.
 //
-// Shared helpers for prim reconstruction, used by prim-reconstruct.cc and
-// prim-reconstruct-geom.cc. The anonymous-namespace helpers get internal linkage
-// per including TU. Requires prim-reconstruct.hh (ReconstructXformOpsFromProperties),
+// Shared helpers for prim reconstruction. Every including TU sees the
+// declarations; prim-reconstruct.cc defines LIGHTUSD_DEFINE_GPRIM_HELPERS and is
+// the only TU that compiles the bodies, so the Wasm build carries one copy instead
+// of one per TU. Requires prim-reconstruct.hh (ReconstructXformOpsFromProperties),
 // common-macros.inc, prim-property-tables.hh, and prim-reconstruct-common.inc to be
-// included first (as in both including TUs).
+// included first.
 
-namespace {
+bool ReconstructMaterialBindingProperties(
+  std::set<std::string> &table, /* inout */
+  std::map<std::string, Property> &properties,
+  MaterialBinding *mb, /* inout */
+  std::string *err);
 
-[[maybe_unused]] bool ReconstructMaterialBindingProperties(
+bool ReconstructCollectionProperties(
+  std::set<std::string> &table, /* inout */
+  std::map<std::string, Property> &properties,
+  Collection *coll, /* inout */
+  std::string *warn,
+  std::string *err,
+  bool strict_allowedToken_check);
+
+bool ReconstructGPrimProperties(
+  const Specifier &spec,
+  std::set<std::string> &table, /* inout */
+  std::map<std::string, Property> &properties,
+  GPrim *gprim, /* inout */
+  std::string *warn,
+  std::string *err,
+  bool strict_allowedToken_check);
+
+#ifdef LIGHTUSD_DEFINE_GPRIM_HELPERS
+
+bool ReconstructMaterialBindingProperties(
   std::set<std::string> &table, /* inout */
   std::map<std::string, Property> &properties,
   MaterialBinding *mb, /* inout */
@@ -109,7 +133,7 @@ namespace {
   return true;
 }
 
-[[maybe_unused]] bool ReconstructCollectionProperties(
+bool ReconstructCollectionProperties(
   std::set<std::string> &table, /* inout */
   std::map<std::string, Property> &properties,
   Collection *coll, /* inout */
@@ -203,7 +227,7 @@ namespace {
   return true;
 }
 // xformOps and built-in props
-[[maybe_unused]] bool ReconstructGPrimProperties(
+bool ReconstructGPrimProperties(
   const Specifier &spec,
   std::set<std::string> &table, /* inout */
   std::map<std::string, Property> &properties,
@@ -242,7 +266,7 @@ namespace {
   return true;
 }
 
-} // namespace local
+#endif  // LIGHTUSD_DEFINE_GPRIM_HELPERS
 
 #define RECONSTRUCT_SIMPLE_GEOM_PRIM_BODY(PrimClass, prim_ptr, TYPED_ATTRS, ENUM_EXPANSION) \
   (void)references; \

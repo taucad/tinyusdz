@@ -1120,11 +1120,8 @@ template <typename T>
 bool AsciiParser::ParseBasicPrimAttr(bool array_qual,
                                      const std::string &primattr_name,
                                      Attribute *out_attr) {
-  Attribute attr;
   primvar::PrimVar var;
-  bool blocked{false};
-  bool anim_blocked{false};
-  bool array_edit{false};
+  BasicAttrValue kind = BasicAttrValue::Value;
   std::vector<T> ae_literals;
   std::vector<int64_t> ae_ops;
 
@@ -1132,35 +1129,33 @@ bool AsciiParser::ParseBasicPrimAttr(bool array_qual,
   // place of a typed value; it blocks animation while letting the default
   // resolve. Detect it before attempting to parse a typed value.
   if (MaybeAnimationBlock()) {
-    anim_blocked = true;
+    kind = BasicAttrValue::AnimationBlocked;
   } else if (array_qual) {
     if (MaybeNone()) {
     } else if (MaybeArrayEdit()) {
       // VtArrayEdit value: `edit [ <op>; ... ]` (only for array-typed attrs).
       if (!ParseArrayEditValue<T>(&ae_literals, &ae_ops)) {
-        PUSH_ERROR_AND_RETURN(fmt::format(
-            "Failed to parse array edit value for `{}` (type {}[])",
-            primattr_name, std::string(value::TypeTraits<T>::type_name())));
+        PUSH_ERROR_AND_RETURN("Failed to parse array edit value for `" << primattr_name << "` (type "
+                              << value::TypeTraits<T>::type_name() << "[])");
       }
-      array_edit = true;
+      kind = BasicAttrValue::ArrayEdit;
     } else {
       std::vector<T> value;
       if (!ParseBasicTypeArray(&value)) {
-        PUSH_ERROR_AND_RETURN(fmt::format("Failed to parse Primtive Attribute {} type = {}[]", primattr_name,
-                              std::string(value::TypeTraits<T>::type_name())));
+        PUSH_ERROR_AND_RETURN("Failed to parse Primtive Attribute " << primattr_name << " type = "
+                              << value::TypeTraits<T>::type_name() << "[]");
       }
 
       // Empty array allowed.
       DCOUT("Got it: primatrr " << primattr_name << ", ty = " + std::string(value::TypeTraits<T>::type_name()) +
             ", sz = " + std::to_string(value.size()));
-      var.set_value(value);
+      var.set_value(std::move(value));
     }
 
   } else {
     nonstd::optional<T> value;
     if (!ReadBasicType(&value)) {
-      PUSH_ERROR_AND_RETURN("Failed to parse " +
-                            std::string(value::TypeTraits<T>::type_name()));
+      PUSH_ERROR_AND_RETURN("Failed to parse " << value::TypeTraits<T>::type_name());
     }
 
     if (value) {
@@ -1170,12 +1165,23 @@ bool AsciiParser::ParseBasicPrimAttr(bool array_qual,
       var.set_value(value.value());
 
     } else {
-      blocked = true;
-      // std::cout << "ParseBasicPrimAttr: " <<
-      // value::TypeTraits<T>::type_name()
-      //           << " = None\n";
+      kind = BasicAttrValue::Blocked;
     }
   }
+
+  return FinishBasicPrimAttr(
+      kind, array_qual, value::TypeTraits<T>::type_name(), std::move(var),
+      kind == BasicAttrValue::ArrayEdit ? value::Value(std::move(ae_literals)) : value::Value(),
+      std::move(ae_ops), out_attr);
+}
+
+bool AsciiParser::FinishBasicPrimAttr(BasicAttrValue kind, bool array_qual,
+                                      const std::string &type_name,
+                                      primvar::PrimVar &&var,
+                                      value::Value &&ae_literals,
+                                      std::vector<int64_t> &&ae_ops,
+                                      Attribute *out_attr) {
+  Attribute attr;
 
   // optional: attribute meta.
   AttrMeta meta;
@@ -1184,35 +1190,27 @@ bool AsciiParser::ParseBasicPrimAttr(bool array_qual,
   }
   attr.metas() = meta;
 
-  if (array_edit) {
+  if (kind == BasicAttrValue::ArrayEdit) {
     // VtArrayEdit value. The declared attribute type is the array element type
     // (`int[]` etc.); the element crate type is derived from the literals at
     // write time, so element_type_id is left unset here.
     value::ArrayEdit aedit;
-    aedit.literals = value::Value(std::move(ae_literals));
+    aedit.literals = std::move(ae_literals);
     aedit.ops = std::move(ae_ops);
-    attr.set_type_name(value::TypeTraits<T>::type_name() + std::string("[]"));
+    attr.set_type_name(type_name + "[]");
     attr.set_value(std::move(aedit));
-  } else if (anim_blocked) {
+  } else if (kind == BasicAttrValue::AnimationBlocked) {
     // AnimationBlock sentinel: carried as a normal default value (not a full
     // ValueBlock), so the declared type is retained.
     value::AnimationBlock animval;
     attr.set_value(std::move(animval));
-    if (array_qual) {
-      attr.set_type_name(value::TypeTraits<T>::type_name() + "[]");
-    } else {
-      attr.set_type_name(value::TypeTraits<T>::type_name());
-    }
-  } else if (blocked) {
+    attr.set_type_name(array_qual ? type_name + "[]" : type_name);
+  } else if (kind == BasicAttrValue::Blocked) {
     // There is still have a type for ValueBlock.
     value::ValueBlock noneval;
     attr.set_value(std::move(noneval));
     attr.set_blocked(true);
-    if (array_qual) {
-      attr.set_type_name(value::TypeTraits<T>::type_name() + "[]");
-    } else {
-      attr.set_type_name(value::TypeTraits<T>::type_name());
-    }
+    attr.set_type_name(array_qual ? type_name + "[]" : type_name);
   } else {
     attr.set_var(std::move(var));
   }

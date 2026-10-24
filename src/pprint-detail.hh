@@ -17,6 +17,10 @@
 
 #include "common-macros.inc"
 
+// The helpers below are LIGHTUSD_NOINLINE: they are called from hundreds of
+// sites across the pprint TUs, and letting each site inline its own copy cost
+// several hundred KB of Wasm for no measurable speedup in USDA writing.
+
 namespace lightusd {
 
 // Forward declarations — defined in pprint-meta.cc
@@ -35,7 +39,7 @@ std::string print_props(const std::map<std::string, Property> &props,
 // ============================================================================
 
 // Helper: print ".connect = <path>" for any attribute with connections
-inline std::string fmt_connections(const std::vector<Path> &paths) {
+LIGHTUSD_NOINLINE inline std::string fmt_connections(const std::vector<Path> &paths) {
   std::stringstream s;
   if (paths.size() == 1) {
     s << paths[0];
@@ -48,7 +52,7 @@ inline std::string fmt_connections(const std::vector<Path> &paths) {
 }
 
 // Helper: print attribute metadata block
-inline void print_attr_metas_block(std::stringstream &ss,
+LIGHTUSD_NOINLINE inline void print_attr_metas_block(std::stringstream &ss,
                                    const AttrMeta &metas,
                                    const uint32_t indent) {
   if (metas.authored()) {
@@ -66,7 +70,7 @@ inline void print_attr_metas_block(std::stringstream &ss,
 // cast each sample back to the concrete enum T and stream it (T's operator<<
 // renders the token name).
 template <typename T>
-inline std::string print_enum_timesamples(const value::TimeSamples &v,
+LIGHTUSD_NOINLINE inline std::string print_enum_timesamples(const value::TimeSamples &v,
                                            const uint32_t indent = 0) {
   std::stringstream ss;
 
@@ -93,7 +97,7 @@ inline std::string print_enum_timesamples(const value::TimeSamples &v,
 // sample.value is a value::Value; extract the typed T and stream it so the
 // output is byte-identical to the typed printer above.
 template <typename T>
-inline std::string print_value_typed_timesamples(const value::TimeSamples &v,
+LIGHTUSD_NOINLINE inline std::string print_value_typed_timesamples(const value::TimeSamples &v,
                                                   const uint32_t indent = 0) {
   std::stringstream ss;
 
@@ -119,7 +123,7 @@ inline std::string print_value_typed_timesamples(const value::TimeSamples &v,
 // Enum-valued attributes that serialize as quoted tokens (Purpose, Visibility,
 // ...). Stored as int64; cast back to the concrete enum T and quote its token.
 template <typename T>
-inline std::string print_enum_token_timesamples(const value::TimeSamples &v,
+LIGHTUSD_NOINLINE inline std::string print_enum_token_timesamples(const value::TimeSamples &v,
                                                  const uint32_t indent = 0) {
   std::stringstream ss;
 
@@ -144,7 +148,7 @@ inline std::string print_enum_token_timesamples(const value::TimeSamples &v,
 
 // Token timesamples from a type-erased value::TimeSamples store (value::token,
 // which is a registered value type).
-inline std::string print_value_token_timesamples(const value::TimeSamples &v,
+LIGHTUSD_NOINLINE inline std::string print_value_token_timesamples(const value::TimeSamples &v,
                                                   const uint32_t indent = 0) {
   std::stringstream ss;
 
@@ -167,7 +171,7 @@ inline std::string print_value_token_timesamples(const value::TimeSamples &v,
   return ss.str();
 }
 
-inline std::string print_str_timesamples(
+LIGHTUSD_NOINLINE inline std::string print_str_timesamples(
     const value::TimeSamples &v, const uint32_t indent = 0) {
   std::stringstream ss;
 
@@ -195,7 +199,7 @@ inline std::string print_str_timesamples(
 // ============================================================================
 
 template <typename T>
-inline std::string print_animatable_default(const Animatable<T> &v,
+LIGHTUSD_NOINLINE inline std::string print_animatable_default(const Animatable<T> &v,
                                             const uint32_t indent = 0) {
   (void)indent;
 
@@ -217,7 +221,7 @@ inline std::string print_animatable_default(const Animatable<T> &v,
 }
 
 template <typename T>
-inline std::string print_animatable_timesamples(const Animatable<T> &v,
+LIGHTUSD_NOINLINE inline std::string print_animatable_timesamples(const Animatable<T> &v,
                                                 const uint32_t indent = 0) {
   std::stringstream ss;
 
@@ -243,7 +247,7 @@ inline std::string print_animatable_timesamples(const Animatable<T> &v,
 // ============================================================================
 
 template <typename T>
-inline std::string print_typed_attr(
+LIGHTUSD_NOINLINE inline std::string print_typed_attr(
     const TypedAttribute<Animatable<T>> &attr, const std::string &name,
     const uint32_t indent) {
   std::stringstream ss;
@@ -332,7 +336,7 @@ inline std::string print_typed_attr(
 // Typed attribute printing — string specialization (Animatable<string>)
 // ============================================================================
 
-inline std::string print_str_attr(
+LIGHTUSD_NOINLINE inline std::string print_str_attr(
     const TypedAttribute<Animatable<std::string>> &attr,
     const std::string &name, const uint32_t indent) {
   std::stringstream ss;
@@ -416,7 +420,7 @@ inline std::string print_str_attr(
 // ============================================================================
 
 template <typename T>
-inline std::string print_typed_attr(const TypedAttribute<T> &attr,
+LIGHTUSD_NOINLINE inline std::string print_typed_attr(const TypedAttribute<T> &attr,
                                     const std::string &name,
                                     const uint32_t indent) {
   std::stringstream ss;
@@ -481,7 +485,7 @@ inline std::string print_typed_attr(const TypedAttribute<T> &attr,
 // ============================================================================
 
 template <typename T>
-inline std::string print_typed_attr(
+LIGHTUSD_NOINLINE inline std::string print_typed_attr(
     const TypedAttributeWithFallback<Animatable<T>> &attr,
     const std::string &name, const uint32_t indent) {
   std::stringstream ss;
@@ -573,7 +577,7 @@ inline std::string print_typed_attr(
 // ============================================================================
 
 template <typename T>
-inline std::string print_typed_terminal_attr(
+LIGHTUSD_NOINLINE inline std::string print_typed_terminal_attr(
     const TypedTerminalAttribute<T> &attr, const std::string &name,
     const uint32_t indent) {
   std::stringstream ss;
@@ -603,7 +607,7 @@ inline std::string print_typed_terminal_attr(
 // ============================================================================
 
 template <typename T>
-inline std::string print_typed_attr(
+LIGHTUSD_NOINLINE inline std::string print_typed_attr(
     const TypedAttributeWithFallback<T> &attr, const std::string &name,
     const uint32_t indent) {
   std::stringstream ss;
@@ -663,7 +667,7 @@ inline std::string print_typed_attr(
 // ============================================================================
 
 template <typename T>
-inline std::string print_typed_token_attr(
+LIGHTUSD_NOINLINE inline std::string print_typed_token_attr(
     const TypedAttributeWithFallback<Animatable<T>> &attr,
     const std::string &name, const uint32_t indent) {
   std::stringstream ss;
@@ -738,7 +742,7 @@ inline std::string print_typed_token_attr(
 // ============================================================================
 
 template <typename T>
-inline std::string print_typed_token_attr(
+LIGHTUSD_NOINLINE inline std::string print_typed_token_attr(
     const TypedAttributeWithFallback<T> &attr, const std::string &name,
     const uint32_t indent) {
   std::stringstream ss;
@@ -780,7 +784,7 @@ inline std::string print_typed_token_attr(
 // Relationship printing helpers
 // ============================================================================
 
-inline std::string print_rel_only(const Relationship &rel,
+LIGHTUSD_NOINLINE inline std::string print_rel_only(const Relationship &rel,
                                   const std::string &name, uint32_t indent) {
   std::stringstream ss;
 
@@ -815,7 +819,7 @@ inline std::string print_rel_only(const Relationship &rel,
   return ss.str();
 }
 
-inline std::string print_relationship(const Relationship &rel,
+LIGHTUSD_NOINLINE inline std::string print_relationship(const Relationship &rel,
                                       const ListEditQual &qual,
                                       const bool custom,
                                       const std::string &name,
@@ -846,7 +850,7 @@ inline std::string print_relationship(const Relationship &rel,
 // ============================================================================
 
 template <typename T>
-inline std::string print_gprim_predefined(const T &gprim,
+LIGHTUSD_NOINLINE inline std::string print_gprim_predefined(const T &gprim,
                                           const uint32_t indent) {
   std::stringstream ss;
 
@@ -878,7 +882,7 @@ inline std::string print_gprim_predefined(const T &gprim,
 // ============================================================================
 
 template <typename PrimT>
-inline std::string print_prim_header(const PrimT &prim, const char *type_name,
+LIGHTUSD_NOINLINE inline std::string print_prim_header(const PrimT &prim, const char *type_name,
                                      uint32_t indent) {
   std::stringstream ss;
   ss << pprint::Indent(indent) << to_string(prim.spec) << " " << type_name
@@ -893,7 +897,7 @@ inline std::string print_prim_header(const PrimT &prim, const char *type_name,
 }
 
 template <typename GeomT>
-inline std::string print_axis_attr(const GeomT &geom, uint32_t indent) {
+LIGHTUSD_NOINLINE inline std::string print_axis_attr(const GeomT &geom, uint32_t indent) {
   if (!geom.axis.authored()) return {};
   std::stringstream ss;
   ss << pprint::Indent(indent) << "uniform token axis = \""

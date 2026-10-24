@@ -740,7 +740,9 @@ bool ReconstructXformOpsFromProperties(
   return true;
 }
 
+#define LIGHTUSD_DEFINE_GPRIM_HELPERS
 #include "prim-reconstruct-geom-detail.inc"
+#undef LIGHTUSD_DEFINE_GPRIM_HELPERS
 
 
 template <>

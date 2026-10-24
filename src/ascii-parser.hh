@@ -1214,6 +1214,16 @@ class AsciiParser {
   bool ParseBasicPrimAttr(bool array_qual, const std::string &primattr_name,
                           Attribute *out_attr);
 
+  // How ParseBasicPrimAttr read the value; selects the attribute FinishBasicPrimAttr builds.
+  enum class BasicAttrValue { Value, Blocked, AnimationBlocked, ArrayEdit };
+
+  // Type-independent tail of ParseBasicPrimAttr<T>: attribute metadata and the
+  // Attribute itself. Kept out of the template so the ~80 instantiations share it.
+  bool FinishBasicPrimAttr(BasicAttrValue kind, bool array_qual,
+                           const std::string &type_name, primvar::PrimVar &&var,
+                           value::Value &&ae_literals, std::vector<int64_t> &&ae_ops,
+                           Attribute *out_attr);
+
   // Parse the body of an `edit [ <op>; ... ]` array-edit value (the `edit`
   // keyword is consumed by the caller). Element literals are read as type T;
   // builds the literal array and the Vt_ArrayEditOps `_ins` instruction stream.

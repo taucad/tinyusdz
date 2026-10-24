@@ -24,7 +24,7 @@ namespace sconv_detail {
 // an attribute's customData / comment / colorSpace / ... were dropped on write
 // even though the generic attribute path (ConvertAttributeToFields) has handled
 // them all along.
-inline void EmitAttrMetas(const std::string &name, const AttrMeta &metas,
+LIGHTUSD_NOINLINE inline void EmitAttrMetas(const std::string &name, const AttrMeta &metas,
                           crate::FieldValuePairVector &fields) {
   if (metas.has_customData()) {
     crate::CrateValue v;
@@ -97,7 +97,7 @@ inline void EmitAttrMetas(const std::string &name, const AttrMeta &metas,
 // The `.typeName` suffix is understood by the field router in ConvertSinglePrim
 // (stage-converter.cc), which needs it because it otherwise infers the spec's
 // type from the default value -- and here there is none.
-inline void EmitAttrDeclaration(const std::string &name, const std::string &type_name,
+LIGHTUSD_NOINLINE inline void EmitAttrDeclaration(const std::string &name, const std::string &type_name,
                          crate::FieldValuePairVector &fields) {
   crate::CrateValue v;
   v.Set(value::token(type_name));
@@ -112,7 +112,7 @@ inline void EmitAttrDeclaration(const std::string &name, const std::string &type
 // recognizes the `.connect` suffix and folds it into the attribute spec's
 // `connectionPaths`.
 template <typename T>
-void EmitAttrConnections(const std::string &name, const T &attr,
+LIGHTUSD_NOINLINE void EmitAttrConnections(const std::string &name, const T &attr,
                          crate::FieldValuePairVector &fields) {
   if (!attr.has_connections()) {
     return;
@@ -130,7 +130,7 @@ void EmitAttrConnections(const std::string &name, const T &attr,
 } // namespace sconv_detail
 
 template <typename T>
-bool CrateWriter::EmitTypedAnimatableAttr(
+LIGHTUSD_NOINLINE bool CrateWriter::EmitTypedAnimatableAttr(
     const char *name, const TypedAttributeWithFallback<Animatable<T>> &attr,
     crate::FieldValuePairVector &fields, std::string *err) {
   if (attr.authored()) {
@@ -165,7 +165,7 @@ bool CrateWriter::EmitTypedAnimatableAttr(
 }
 
 template<typename T>
-bool CrateWriter::AddTypedArrayAttribute(
+LIGHTUSD_NOINLINE bool CrateWriter::AddTypedArrayAttribute(
     const char* name, const T& typed_attr,
     crate::FieldValuePairVector& fields) {
   if (typed_attr.has_value()) {
@@ -192,7 +192,7 @@ bool CrateWriter::AddTypedArrayAttribute(
 }
 
 template<typename T>
-bool CrateWriter::ExtractAnimatableDefault(
+LIGHTUSD_NOINLINE bool CrateWriter::ExtractAnimatableDefault(
     const Animatable<T>& anim, const char* name,
     crate::FieldValuePairVector& fields, std::string* err) {
   if (anim.has_default()) {
