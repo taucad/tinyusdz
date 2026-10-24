@@ -15,6 +15,7 @@
 #pragma clang diagnostic pop
 #endif
 
+#include <cstdio>
 #include <cstring>
 #include <cstdint>
 #include <cmath>
@@ -2324,5 +2325,55 @@ char *dtoa(double d, char *buf) {
   size_t len = dtos(d, buf);
   return buf + len;
 }
+
+namespace diag {
+
+Message::Message(const char *file, const char *func, int line) {
+  if (file) {
+    buf_ += file;
+    buf_ += ':';
+  }
+  buf_ += func;
+  buf_ += "():";
+  buf_ += std::to_string(line);
+  buf_ += ' ';
+}
+
+Message::Message(const char *file, const char *tag, const char *func, int line) {
+  if (file) {
+    buf_ += file;
+  }
+  buf_ += tag;
+  buf_ += ':';
+  buf_ += func;
+  buf_ += "():";
+  buf_ += std::to_string(line);
+  buf_ += ' ';
+}
+
+Message::Message(const char *file, const std::string &tag, const char *func, int line)
+    : Message(file, tag.c_str(), func, line) {}
+
+Message &Message::operator<<(const std::string &v) { buf_ += v; return *this; }
+Message &Message::operator<<(const char *v) { buf_ += v; return *this; }
+Message &Message::operator<<(char v) { buf_ += v; return *this; }
+Message &Message::operator<<(int v) { buf_ += std::to_string(v); return *this; }
+Message &Message::operator<<(unsigned v) { buf_ += std::to_string(v); return *this; }
+Message &Message::operator<<(long v) { buf_ += std::to_string(v); return *this; }
+Message &Message::operator<<(unsigned long v) { buf_ += std::to_string(v); return *this; }
+Message &Message::operator<<(long long v) { buf_ += std::to_string(v); return *this; }
+Message &Message::operator<<(unsigned long long v) { buf_ += std::to_string(v); return *this; }
+
+Message &Message::operator<<(double v) {
+  // std::ostream's default: %g with precision 6.
+  char buf[32];
+  int n = snprintf(buf, sizeof(buf), "%g", v);
+  if (n > 0) buf_.append(buf, size_t(n));
+  return *this;
+}
+
+std::string Message::Take() { return std::move(buf_); }
+
+}  // namespace diag
 
 }  // namespace lightusd

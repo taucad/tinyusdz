@@ -205,9 +205,9 @@ struct target_traits<TypedAttributeWithFallback<T>> {
 // ============================================================================
 
 template<typename Target>
-static ParseResult ParseTypedAttributeUnified(
+LIGHTUSD_NOINLINE static ParseResult ParseTypedAttributeUnified(
     std::set<std::string> &table,
-    const std::string prop_name,
+    const std::string &prop_name,
     Property &prop,
     const std::string &name,
     Target &target)
@@ -450,7 +450,7 @@ static ParseResult ParseTypedAttributeUnified(
 // For animatable attribute(`varying`) with fallback
 template<typename T>
 static ParseResult ParseTypedAttribute(std::set<std::string> &table, /* inout */
-  const std::string prop_name,
+  const std::string &prop_name,
   Property &prop,  // Non-const to allow move from metadata
   const std::string &name,
   TypedAttributeWithFallback<Animatable<T>> &target)
@@ -462,7 +462,7 @@ static ParseResult ParseTypedAttribute(std::set<std::string> &table, /* inout */
 // For 'uniform' attribute with fallback
 template<typename T>
 static ParseResult ParseTypedAttribute(std::set<std::string> &table, /* inout */
-  const std::string prop_name,
+  const std::string &prop_name,
   Property &prop,  // Non-const to allow move from metadata
   const std::string &name,
   TypedAttributeWithFallback<T> &target) /* out */
@@ -474,7 +474,7 @@ static ParseResult ParseTypedAttribute(std::set<std::string> &table, /* inout */
 // For animatable attribute(`varying`) without fallback
 template<typename T>
 static ParseResult ParseTypedAttribute(std::set<std::string> &table, /* inout */
-  const std::string prop_name,
+  const std::string &prop_name,
   Property &prop,  // Non-const to allow move from metadata
   const std::string &name,
   TypedAttribute<Animatable<T>> &target) /* out */
@@ -486,7 +486,7 @@ static ParseResult ParseTypedAttribute(std::set<std::string> &table, /* inout */
 // For uniform attribute without fallback
 template<typename T>
 static ParseResult ParseTypedAttribute(std::set<std::string> &table, /* inout */
-  const std::string prop_name,
+  const std::string &prop_name,
   Property &prop,  // Non-const to allow move from metadata
   const std::string &name,
   TypedAttribute<T> &target) /* out */
@@ -498,7 +498,7 @@ static ParseResult ParseTypedAttribute(std::set<std::string> &table, /* inout */
 // Special case for Extent(float3[2]) type.
 // TODO: Reuse code of ParseTypedAttribute as much as possible
 [[maybe_unused]] static ParseResult ParseExtentAttribute(std::set<std::string> &table, /* inout */
-  const std::string prop_name,
+  const std::string &prop_name,
   Property &prop,  // Non-const to allow move from metadata
   const std::string &name,
   TypedAttribute<Animatable<Extent>> &target) /* out */
@@ -593,8 +593,8 @@ static ParseResult ParseTypedAttribute(std::set<std::string> &table, /* inout */
 // Allowed syntax:
 //   "T varname"
 template<typename T>
-static ParseResult ParseShaderOutputTerminalAttribute(std::set<std::string> &table, /* inout */
-  const std::string prop_name,
+LIGHTUSD_NOINLINE static ParseResult ParseShaderOutputTerminalAttribute(std::set<std::string> &table, /* inout */
+  const std::string &prop_name,
   Property &prop,  // Non-const to allow move from metadata
   const std::string &name,
   TypedTerminalAttribute<T> &target, /* out */
@@ -730,7 +730,7 @@ end:
 // Allowed syntax:
 //   "token outputs:surface.connect = </path/to/conn/>"
 [[maybe_unused]] static ParseResult ParseShaderInputConnectionProperty(std::set<std::string> &table, /* inout */
-  const std::string prop_name,
+  const std::string &prop_name,
   Property &prop,  // Non-const to allow move from metadata
   const std::string &name,
   TypedConnection<value::token> &target) /* out */
@@ -834,57 +834,111 @@ end:
   }
 
 
-#define PARSE_SHADER_TERMINAL_ATTRIBUTE(__table, __prop, __name, __klass, __target) { \
-  ParseResult ret = ParseShaderOutputTerminalAttribute(__table, __prop.first, __prop.second, __name, __target, options.strict_shader_type_check); \
-  if (ret.code == ParseResult::ResultCode::Success || ret.code == ParseResult::ResultCode::AlreadyProcessed) { \
-    if (!ret.warn.empty()) { PUSH_WARN(ret.warn); } \
-    DCOUT("Added shader terminal attribute: " << __name); \
-    continue; /* got it */\
-  } else if (ret.code == ParseResult::ResultCode::Unmatched) { \
-    /* go next */ \
-  } else { \
-    PUSH_ERROR_AND_RETURN(fmt::format("Parsing shader output property `{}` failed. Error: {}", __name, ret.err)); \
-  } \
+// How a PARSE_*_ATTRIBUTE expansion handles the parser's result. The
+// handling lives in FinishAttribute, out of line, so each of the thousands of
+// expansions is a name check, one call and two branches.
+enum class AttrMode {
+  Typed,             // PARSE_TYPED_ATTRIBUTE
+  ShaderInput,       // PARSE_SHADER_INPUT_ATTRIBUTE
+  NoContinue,        // PARSE_TYPED_ATTRIBUTE_NOCONTINUE
+  Extent,            // PARSE_EXTENT_ATTRIBUTE
+  ShaderTerminal,    // PARSE_SHADER_TERMINAL_ATTRIBUTE
+  ShaderConnection,  // PARSE_SHADER_INPUT_CONNECTION_PROPERTY
+};
+
+enum class AttrStep {
+  Done,  // consumed: `continue` with the next property
+  Next,  // not consumed: try the next candidate
+  Fail,  // error pushed: return false
+};
+
+// `file`, `func` and `line` are the expansion site's, so diagnostics read as
+// they did when PUSH_* expanded inline there.
+LIGHTUSD_NOINLINE static AttrStep FinishAttribute(
+    const ParseResult &ret, const std::string &name, AttrMode mode,
+    bool strict_shader_type_check, const char *file, const char *func,
+    int line, std::string *warn, std::string *err) {
+  using Code = ParseResult::ResultCode;
+  const auto push = [&](std::string *dst, const std::string &msg) {
+    if (!dst) return;
+    diag::Message m(file, func, line);
+    m << msg;
+    std::string s = m.Take();
+    (*dst) = s + (dst->empty() ? std::string() : std::string("\n")) + (*dst);
+  };
+
+  if (ret.code == Code::Success || ret.code == Code::AlreadyProcessed) {
+    if (mode != AttrMode::Extent && mode != AttrMode::ShaderConnection &&
+        !ret.warn.empty()) {
+      push(warn, ret.warn);
+    }
+    return mode == AttrMode::NoContinue ? AttrStep::Next : AttrStep::Done;
+  }
+  if (ret.code == Code::Unmatched) {
+    return AttrStep::Next;
+  }
+  if (ret.code == Code::TypeMismatch && mode == AttrMode::Typed) {
+    /* Sdf-level leniency (matches OpenUSD, which does not type-check builtin
+       attributes at parse time): keep the authored attribute, which the
+       trailing ADD_PROPERTY captures as a custom property, instead of failing
+       the whole prim. The canonical typed field stays unauthored. */
+    push(warn, fmt::format("Attribute `{}` declared with a non-conformant type: {} Preserving the authored value as a custom property.", name, ret.err));
+    return AttrStep::Next;
+  }
+  if (ret.code == Code::TypeMismatch && mode == AttrMode::ShaderInput &&
+      !strict_shader_type_check) {
+    push(warn, fmt::format("Shader input `{}` declared with a non-conformant type: {} Accepting; preserving the authored value as a custom property. Set strict_shader_type_check=true to make this an error.", name, ret.err));
+    return AttrStep::Next;
+  }
+  switch (mode) {
+    case AttrMode::ShaderInput:
+      push(err, fmt::format("Parsing shader input property `{}` failed. Error: {}", name, ret.err));
+      break;
+    case AttrMode::Extent:
+      push(err, fmt::format("Parsing attribute `extent` failed. Error: {}", ret.err));
+      break;
+    case AttrMode::ShaderTerminal:
+      push(err, fmt::format("Parsing shader output property `{}` failed. Error: {}", name, ret.err));
+      break;
+    case AttrMode::ShaderConnection:
+      push(err, fmt::format("Parsing shader property `{}` failed. Error: {}", name, ret.err));
+      break;
+    case AttrMode::Typed:
+    case AttrMode::NoContinue:
+      push(err, fmt::format("Parsing attribute `{}` failed. Error: {}", name, ret.err));
+      break;
+  }
+  return AttrStep::Fail;
 }
 
-
-#define PARSE_SHADER_INPUT_CONNECTION_PROPERTY(__table, __prop, __name, __klass, __target) { \
-  ParseResult ret = ParseShaderInputConnectionProperty(__table, __prop.first, __prop.second, __name, __target); \
-  if (ret.code == ParseResult::ResultCode::Success || ret.code == ParseResult::ResultCode::AlreadyProcessed) { \
-    DCOUT("Added shader input connection: " << __name); \
-    continue; /* got it */\
-  } else if (ret.code == ParseResult::ResultCode::Unmatched) { \
-    /* go next */ \
-  } else { \
-    PUSH_ERROR_AND_RETURN(fmt::format("Parsing shader property `{}` failed. Error: {}", __name, ret.err)); \
-  } \
+// The name check runs first, so a candidate that does not match costs a
+// string compare rather than a parser call.
+#define LIGHTUSD_PARSE_ATTR_(__prop, __name, __mode, __strict, __call) {          \
+  if (__prop.first == __name) {                                                  \
+    const AttrStep step_ = FinishAttribute(__call, __name, __mode, __strict,     \
+        LIGHTUSD_DIAG_FILE, __func__, __LINE__, warn, err);                      \
+    if (step_ == AttrStep::Fail) return false;                                   \
+    if (step_ == AttrStep::Done) continue;                                       \
+  }                                                                              \
 }
+
+#define PARSE_SHADER_TERMINAL_ATTRIBUTE(__table, __prop, __name, __klass, __target) \
+  LIGHTUSD_PARSE_ATTR_(__prop, __name, AttrMode::ShaderTerminal, options.strict_shader_type_check, \
+      ParseShaderOutputTerminalAttribute(__table, __prop.first, __prop.second, __name, __target, options.strict_shader_type_check))
+
+
+#define PARSE_SHADER_INPUT_CONNECTION_PROPERTY(__table, __prop, __name, __klass, __target) \
+  LIGHTUSD_PARSE_ATTR_(__prop, __name, AttrMode::ShaderConnection, false, \
+      ParseShaderInputConnectionProperty(__table, __prop.first, __prop.second, __name, __target))
 
 // EnumHandler and CheckAllowedTokens templates removed.
 // Enum handling is now done via centralized handlers in enum-handlers.cc
 
 } // namespace
 
-#define PARSE_TYPED_ATTRIBUTE(__table, __prop, __name, __klass, __target) { \
-  ParseResult ret = ParseTypedAttribute(__table, __prop.first, __prop.second, __name, __target); \
-  if (ret.code == ParseResult::ResultCode::Success || ret.code == ParseResult::ResultCode::AlreadyProcessed) { \
-    if (!ret.warn.empty()) { \
-      PUSH_WARN(ret.warn); \
-    } \
-    continue; /* got it */\
-  } else if (ret.code == ParseResult::ResultCode::Unmatched) { \
-    /* go next */ \
-  } else if (ret.code == ParseResult::ResultCode::TypeMismatch) { \
-    /* Sdf-level leniency (matches OpenUSD, which does not type-check builtin \
-       attributes at parse time): keep the authored attribute — the trailing \
-       ADD_PROPERTY captures it as a custom property — instead of failing the \
-       whole prim. The canonical typed field stays unauthored. */ \
-    PUSH_WARN(fmt::format("Attribute `{}` declared with a non-conformant type: {} Preserving the authored value as a custom property.", __name, ret.err)); \
-    /* do NOT `continue`: fall through so the trailing ADD_PROPERTY captures it */ \
-  } else { \
-    PUSH_ERROR_AND_RETURN(fmt::format("Parsing attribute `{}` failed. Error: {}", __name, ret.err)); \
-  } \
-}
+#define PARSE_TYPED_ATTRIBUTE(__table, __prop, __name, __klass, __target) \
+  LIGHTUSD_PARSE_ATTR_(__prop, __name, AttrMode::Typed, false, \
+      ParseTypedAttribute(__table, __prop.first, __prop.second, __name, __target))
 
 // Shader INPUT attribute parse with relaxed type-conformance.
 // Same as PARSE_TYPED_ATTRIBUTE, but when the authored Sdf type does not match
@@ -895,45 +949,17 @@ end:
 //            typed field stays unauthored; the canonical schema type is kept.
 // Intended for UsdPreviewSurface-family shader inputs. Requires `options`
 // (PrimReconstructOptions) and ADD_PROPERTY at the end of the parse loop.
-#define PARSE_SHADER_INPUT_ATTRIBUTE(__table, __prop, __name, __klass, __target) { \
-  ParseResult ret = ParseTypedAttribute(__table, __prop.first, __prop.second, __name, __target); \
-  if (ret.code == ParseResult::ResultCode::Success || ret.code == ParseResult::ResultCode::AlreadyProcessed) { \
-    if (!ret.warn.empty()) { PUSH_WARN(ret.warn); } \
-    continue; /* got it */\
-  } else if (ret.code == ParseResult::ResultCode::Unmatched) { \
-    /* go next */ \
-  } else if ((ret.code == ParseResult::ResultCode::TypeMismatch) && !options.strict_shader_type_check) { \
-    PUSH_WARN(fmt::format("Shader input `{}` declared with a non-conformant type: {} Accepting; preserving the authored value as a custom property. Set strict_shader_type_check=true to make this an error.", __name, ret.err)); \
-    /* do not consume: fall through so the trailing ADD_PROPERTY captures it */ \
-  } else { \
-    PUSH_ERROR_AND_RETURN(fmt::format("Parsing shader input property `{}` failed. Error: {}", __name, ret.err)); \
-  } \
-}
+#define PARSE_SHADER_INPUT_ATTRIBUTE(__table, __prop, __name, __klass, __target) \
+  LIGHTUSD_PARSE_ATTR_(__prop, __name, AttrMode::ShaderInput, options.strict_shader_type_check, \
+      ParseTypedAttribute(__table, __prop.first, __prop.second, __name, __target))
 
-#define PARSE_TYPED_ATTRIBUTE_NOCONTINUE(__table, __prop, __name, __klass, __target) { \
-  ParseResult ret = ParseTypedAttribute(__table, __prop.first, __prop.second, __name, __target); \
-  if (ret.code == ParseResult::ResultCode::Success || ret.code == ParseResult::ResultCode::AlreadyProcessed) { \
-    if (!ret.warn.empty()) { \
-      PUSH_WARN(ret.warn); \
-    } \
-    /* do nothing */ \
-  } else if (ret.code == ParseResult::ResultCode::Unmatched) { \
-    /* go next */ \
-  } else { \
-    PUSH_ERROR_AND_RETURN(fmt::format("Parsing attribute `{}` failed. Error: {}", __name, ret.err)); \
-  } \
-}
+#define PARSE_TYPED_ATTRIBUTE_NOCONTINUE(__table, __prop, __name, __klass, __target) \
+  LIGHTUSD_PARSE_ATTR_(__prop, __name, AttrMode::NoContinue, false, \
+      ParseTypedAttribute(__table, __prop.first, __prop.second, __name, __target))
 
-#define PARSE_EXTENT_ATTRIBUTE(__table, __prop, __name, __klass, __target) { \
-  ParseResult ret = ParseExtentAttribute(__table, __prop.first, __prop.second, __name, __target); \
-  if (ret.code == ParseResult::ResultCode::Success || ret.code == ParseResult::ResultCode::AlreadyProcessed) { \
-    continue; /* got it */\
-  } else if (ret.code == ParseResult::ResultCode::Unmatched) { \
-    /* go next */ \
-  } else { \
-    PUSH_ERROR_AND_RETURN(fmt::format("Parsing attribute `extent` failed. Error: {}", ret.err)); \
-  } \
-}
+#define PARSE_EXTENT_ATTRIBUTE(__table, __prop, __name, __klass, __target) \
+  LIGHTUSD_PARSE_ATTR_(__prop, __name, AttrMode::Extent, false, \
+      ParseExtentAttribute(__table, __prop.first, __prop.second, __name, __target))
 
 // Use centralized enum handlers from enum-handlers.hh
 // These wrapper functions maintain backwards compatibility with existing macro usage
