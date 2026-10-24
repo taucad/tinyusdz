@@ -1275,7 +1275,10 @@ bool IsUSDZ(const uint8_t *addr, const size_t length) {
 }
 
 bool IsZstdCompressed(const uint8_t *addr, const size_t length) {
-  return ZstdCompression::IsZstdCompressed(addr, length);
+  // Magic check only, so detection (and its clear error) works without
+  // LIGHTUSD_WITH_ZSTD_COMPRESSION, which compiles zstd-compression.cc.
+  return addr && length >= 4 && addr[0] == 0x28 && addr[1] == 0xB5 &&
+         addr[2] == 0x2F && addr[3] == 0xFD;
 }
 
 bool IsUSD(const std::string &filename, std::string *detected_format) {

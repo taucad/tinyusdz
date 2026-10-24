@@ -44,7 +44,9 @@
 #include "tiny-format.hh"
 #include "lightusd.hh"
 #include "usdGeom.hh"
+#if defined(LIGHTUSD_USE_USDVOL)
 #include "usdVol.hh"  // OpenVDB (.vdb) loader
+#endif
 #include "usdShade.hh"
 #include "usdLux.hh"
 #include "usdMtlx.hh"
@@ -866,7 +868,7 @@ static NodeCategory GetNodeCategoryFromType(NodeType nodeType) {
 // Extract the common FieldAsset attributes (filePath / fieldName) from a
 // field-asset prim (OpenVDBAsset / Field3DAsset / FieldAsset). Returns false if
 // the prim is not a field-asset type.
-static bool GetFieldAssetInfo(const lightusd::Prim &prim,
+[[maybe_unused]] static bool GetFieldAssetInfo(const lightusd::Prim &prim,
                               value::AssetPath *filePath,
                               std::string *fieldName) {
   const FieldAsset *fa = nullptr;
@@ -1058,6 +1060,9 @@ bool RenderSceneConverter::ConvertVolume(
     }
   }
 
+#if defined(LIGHTUSD_USE_USDVOL)
+  // Field decoding needs the OpenVDB reader (LIGHTUSD_WITH_USDVOL). Without it
+  // the volume keeps its shader constants and carries no fields.
   const AssetResolutionResolver &assetResolver = env.asset_resolver;
 
   for (const auto &item : volume.fieldRelationships) {
@@ -1176,6 +1181,7 @@ bool RenderSceneConverter::ConvertVolume(
 
     dst->fields.push_back(std::move(f));
   }
+#endif  // LIGHTUSD_USE_USDVOL
 
   return true;
 }
